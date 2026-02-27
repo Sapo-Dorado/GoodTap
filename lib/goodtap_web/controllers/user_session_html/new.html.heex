@@ -1,0 +1,37 @@
+<Layouts.app flash={@flash} current_scope={@current_scope}>
+  <div class="mx-auto max-w-sm space-y-4">
+    <div class="text-center">
+      <.header>
+        Log in
+        <:subtitle>
+          Don't have an account?
+          <.link navigate={~p"/users/register"} class="font-semibold text-brand hover:underline">
+            Sign up
+          </.link>
+        </:subtitle>
+      </.header>
+    </div>
+
+    <.form :let={f} for={@form} as={:user} id="login_form" action={~p"/users/log-in"}>
+      <.input
+        field={f[:username]}
+        type="text"
+        label="Username"
+        autocomplete="username"
+        spellcheck="false"
+        required
+        phx-mounted={JS.focus()}
+      />
+      <.input
+        field={f[:password]}
+        type="password"
+        label="Password"
+        autocomplete="current-password"
+        required
+      />
+      <.button class="btn btn-primary w-full mt-4" name={@form[:remember_me].name} value="true">
+        Log in <span aria-hidden="true">→</span>
+      </.button>
+    </.form>
+  </div>
+</Layouts.app>

@@ -1,0 +1,21 @@
+<div class="min-h-screen flex flex-col items-center justify-center bg-gray-950 text-white">
+  <h1 class="text-6xl font-bold tracking-tight mb-8">Goodtap.in</h1>
+
+  <.link
+    navigate={~p"/users/register"}
+    class="get-started-btn px-8 py-4 text-xl font-semibold rounded-lg"
+  >
+    Get Started!
+  </.link>
+</div>
+
+<style>
+  .get-started-btn {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .get-started-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+  }
+</style>

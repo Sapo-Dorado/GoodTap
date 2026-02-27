@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(elixir:*)",
+      "Bash(mix:*)",
+      "Bash(node:*)",
+      "Bash(psql:*)",
+      "Bash(export:*)",
+      "Bash(/opt/homebrew/opt/postgresql@18/bin/psql:*)"
+    ]
+  }
+}
