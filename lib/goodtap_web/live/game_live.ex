@@ -584,22 +584,28 @@ defmodule GoodtapWeb.GameLive do
           <%= for card <- zone_cards(@opp, "battlefield") do %>
             <div
               class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "rotate-90", else: "")]}
-              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%; transform-origin: center;"}
+              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
             >
-              <img
-                src={card_display_url(card, @my_role, @opp_role, "battlefield")}
-                class="card-image rounded shadow-lg"
-                draggable="false"
-              />
-              <%= if card["counters"] != [] do %>
-                <div class="absolute -top-2 -right-2 flex gap-1">
-                  <%= for counter <- card["counters"] || [] do %>
-                    <span class="bg-blue-600 text-white text-xs rounded-full px-1.5 py-0.5 font-mono">
-                      {counter["value"]}
-                    </span>
-                  <% end %>
-                </div>
-              <% end %>
+              <%!-- counter-rotate so cards appear right-side-up inside the 180° flipped field --%>
+              <div
+                style="transform: rotate(180deg); transform-origin: center;"
+                data-card-img={card_display_url(card, @my_role, @opp_role, "battlefield")}
+              >
+                <img
+                  src={card_display_url(card, @my_role, @opp_role, "battlefield")}
+                  class="card-image rounded shadow-lg"
+                  draggable="false"
+                />
+                <%= if card["counters"] != [] do %>
+                  <div class="absolute -top-2 -right-2 flex gap-1">
+                    <%= for counter <- card["counters"] || [] do %>
+                      <span class="bg-blue-600 text-white text-xs rounded-full px-1.5 py-0.5 font-mono">
+                        {counter["value"]}
+                      </span>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
             </div>
           <% end %>
         </div>
@@ -627,6 +633,7 @@ defmodule GoodtapWeb.GameLive do
               data-instance-id={card["instance_id"]}
               data-zone="battlefield"
               data-owner={@my_role}
+              data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
               phx-click={JS.push("select_card", value: %{instance_id: card["instance_id"]})}
               phx-value-instance_id={card["instance_id"]}
             >
@@ -795,6 +802,7 @@ defmodule GoodtapWeb.GameLive do
               data-instance-id={card["instance_id"]}
               data-zone="hand"
               data-owner={@my_role}
+              data-card-img={card_display_url(card, @my_role, @my_role, "hand")}
               phx-click={JS.push("select_card", value: %{instance_id: card["instance_id"]})}
             >
               <img
@@ -805,6 +813,21 @@ defmodule GoodtapWeb.GameLive do
             </div>
           <% end %>
         </div>
+      </div>
+
+      <%!-- Card Preview Panel (shown on hover via JS, hidden during drag) --%>
+      <div
+        id="card-preview-panel"
+        class="fixed top-1/2 -translate-y-1/2 z-40 pointer-events-none"
+        style="display: none; right: 12px;"
+      >
+        <img
+          id="card-preview-img"
+          src=""
+          class="rounded-lg shadow-2xl"
+          style="height: 420px; width: auto;"
+          draggable="false"
+        />
       </div>
 
       <%!-- Zone Popup --%>

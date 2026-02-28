@@ -113,10 +113,10 @@
   -webkit-user-drag: none;
 }
 
-/* Cards on battlefield are slightly larger */
+/* Cards on battlefield - smaller to fit more on board */
 .card-on-battlefield .card-image {
-  width: 80px;
-  height: 112px;
+  width: 56px;
+  height: 78px;
 }
 
 /* Hand cards */
