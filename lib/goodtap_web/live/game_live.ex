@@ -532,7 +532,7 @@ defmodule GoodtapWeb.GameLive do
       phx-click="deselect_card"
     >
       <%!-- Opponent Area (top half) --%>
-      <div class="flex-1 flex flex-col min-h-0">
+      <div class="flex-[2] flex flex-col min-h-0">
         <%!-- Opponent Info Bar --%>
         <div class="flex items-center gap-4 px-4 py-2 bg-gray-900 border-b border-gray-700 shrink-0">
           <span class="font-bold text-sm">{@opp["username"] || "Opponent"}</span>
@@ -574,11 +574,12 @@ defmodule GoodtapWeb.GameLive do
           </div>
         </div>
 
-        <%!-- Opponent Battlefield --%>
+        <%!-- Opponent Battlefield (rotated 180° so their near edge faces them) --%>
         <div
           id="opp-battlefield"
-          class="flex-1 relative bg-gray-900 border-b border-gray-700"
+          class="flex-1 relative bg-gray-900 border-b border-gray-700 overflow-hidden"
           data-drop-zone="opp-battlefield"
+          style="transform: rotate(180deg);"
         >
           <%= for card <- zone_cards(@opp, "battlefield") do %>
             <div
@@ -605,11 +606,11 @@ defmodule GoodtapWeb.GameLive do
       </div>
 
       <%!-- My Area (bottom half) --%>
-      <div class="flex-1 flex flex-col min-h-0">
+      <div class="flex-[2] flex flex-col min-h-0">
         <%!-- My Battlefield --%>
         <div
           id="my-battlefield"
-          class="flex-1 relative bg-gray-850"
+          class="flex-1 relative bg-gray-850 overflow-hidden"
           data-drop-zone="battlefield"
           phx-hook="Battlefield"
         >

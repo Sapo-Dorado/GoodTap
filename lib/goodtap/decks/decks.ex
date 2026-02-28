@@ -2,7 +2,7 @@ defmodule Goodtap.Decks do
   import Ecto.Query, warn: false
   alias Goodtap.Repo
   alias Goodtap.Decks.{Deck, DeckCard}
-  alias Goodtap.Decks.Importers.Registry
+  alias Goodtap.Decks.Importers.Plaintext
   alias Goodtap.Catalog
 
   def list_user_decks(user_id) do
@@ -18,26 +18,6 @@ defmodule Goodtap.Decks do
     Deck
     |> Repo.get!(id)
     |> Repo.preload(deck_cards: :card)
-  end
-
-  def create_deck_from_url(user, url, name \\ nil) do
-    with importer when not is_nil(importer) <- Registry.find_importer(url),
-         {:ok, %{name: imported_name, cards: card_list}} <- importer.import(url) do
-      deck_name = name || imported_name
-
-      Repo.transact(fn ->
-        with {:ok, deck} <-
-               %Deck{}
-               |> Deck.changeset(%{name: deck_name, source_url: url, user_id: user.id})
-               |> Repo.insert() do
-          insert_deck_cards(deck, card_list)
-          {:ok, Repo.preload(deck, :deck_cards)}
-        end
-      end)
-    else
-      nil -> {:error, "No importer found for that URL. Only Moxfield links are supported."}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
   defp insert_deck_cards(deck, card_list) do
@@ -58,6 +38,20 @@ defmodule Goodtap.Decks do
           |> Repo.insert(on_conflict: :replace_all, conflict_target: [:deck_id, :card_id, :board])
       end
     end)
+  end
+
+  def create_deck_from_text(user, name, text) do
+    with {:ok, %{name: deck_name, cards: card_list}} <- Plaintext.import(name, text) do
+      Repo.transact(fn ->
+        with {:ok, deck} <-
+               %Deck{}
+               |> Deck.changeset(%{name: deck_name, user_id: user.id})
+               |> Repo.insert() do
+          insert_deck_cards(deck, card_list)
+          {:ok, Repo.preload(deck, :deck_cards)}
+        end
+      end)
+    end
   end
 
   def create_deck(user, attrs) do

@@ -7,7 +7,9 @@
       "Bash(node:*)",
       "Bash(psql:*)",
       "Bash(export:*)",
-      "Bash(/opt/homebrew/opt/postgresql@18/bin/psql:*)"
+      "Bash(/opt/homebrew/opt/postgresql@18/bin/psql:*)",
+      "Bash(curl:*)",
+      "WebSearch"
     ]
   }
 }

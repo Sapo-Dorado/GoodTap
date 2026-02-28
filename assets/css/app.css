@@ -137,9 +137,9 @@
   background-image: radial-gradient(ellipse at center, rgba(55, 65, 81, 0.5) 0%, transparent 70%);
 }
 
-/* Rotate applied via Tailwind rotate-90, but we need transform-origin */
+/* transform-origin: top left so left/top % positions map to card top-left corner */
 .card-on-battlefield {
-  transform-origin: center;
+  transform-origin: top left;
   transition: box-shadow 0.1s ease;
 }
 
@@ -149,9 +149,10 @@
   z-index: 10;
 }
 
-/* Tapped rotation */
-.rotate-90 {
-  transform: rotate(90deg);
+/* Tapped rotation - offset so card rotates around its visual center */
+.card-on-battlefield.rotate-90 {
+  transform: rotate(90deg) translateY(-100%);
+  transform-origin: top left;
 }
 
 /* Game container fills viewport */
