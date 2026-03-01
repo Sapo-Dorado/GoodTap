@@ -410,7 +410,7 @@ const DragDrop = {
           // ── Battlefield reposition ──
           // Server renders: left: trunc(x * 100)%; top: trunc(y * 100)%
           // We must use the same trunc so morphdom sees an identical style string.
-          ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId, zoneRect));
+          ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
           card.style.left = Math.trunc(relX * 100) + "%";
           card.style.top = Math.trunc(relY * 100) + "%";
           card.style.display = "";
@@ -472,7 +472,7 @@ const DragDrop = {
           // any attribute differences in-place — no positional jump.
           const bf = document.getElementById("my-battlefield");
           if (bf) {
-            ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId, zoneRect));
+            ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
             const el = document.createElement("div");
             el.id = `card-${instanceId}`;
             el.className = "card-on-battlefield absolute cursor-pointer transition-transform";
@@ -555,12 +555,8 @@ const DragDrop = {
 
   // Shift relX right by 1% steps until no other battlefield card occupies the same
   // truncated position, or until the card's right edge would leave the battlefield.
-  nudgeIfOccupied(relX, relY, excludeInstanceId, zoneRect) {
-    // Stop before the card's right edge would clip outside the battlefield.
-    // zoneRect may be undefined (server-initiated drops); fall back to 98%.
-    const maxX = zoneRect
-      ? Math.floor((1 - CARD_W / zoneRect.width) * 100)
-      : 98;
+  nudgeIfOccupied(relX, relY, excludeInstanceId) {
+    const maxX = 95;
 
     const cards = Array.from(
       document.querySelectorAll(`[data-draggable][data-zone="battlefield"][data-owner="${this.myRole}"]`)

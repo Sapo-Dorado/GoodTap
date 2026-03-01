@@ -392,7 +392,7 @@ defmodule Goodtap.GameEngine.Actions do
     start = round(x * 100)
     tx =
       Stream.iterate(start, &(&1 + 1))
-      |> Enum.find(fn cx -> cx >= 98 or not MapSet.member?(occupied, {cx, ty}) end)
+      |> Enum.find(fn cx -> cx >= 95 or not MapSet.member?(occupied, {cx, ty}) end)
     # Store as integer percent / 100 so trunc(result * 100) == tx (no float drift).
     {tx / 100, ty / 100}
   end
