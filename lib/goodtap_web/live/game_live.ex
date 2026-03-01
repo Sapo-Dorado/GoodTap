@@ -541,6 +541,7 @@ defmodule GoodtapWeb.GameLive do
       id="game-container"
       class="game-layout h-screen flex flex-col overflow-hidden bg-gray-950 select-none"
       phx-hook="DragDrop"
+      data-my-role={@my_role}
     >
       <%!-- Opponent Area (top half) --%>
       <div class="flex-[2] flex flex-col min-h-0">

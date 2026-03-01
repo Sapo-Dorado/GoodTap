@@ -14,6 +14,7 @@ const DragDrop = {
     this.hoveredCard = null;
     this.insertGhost = null;
     this._insertIndex = null;
+    this.myRole = this.el.dataset.myRole;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
 
@@ -22,6 +23,7 @@ const DragDrop = {
       const card = e.target.closest("[data-draggable]");
       if (!card) return;
       if (e.button !== 0) return;
+      if (card.dataset.owner && card.dataset.owner !== this.myRole) return;
       this.hidePreview();
       this.startDrag(card, e);
     };
