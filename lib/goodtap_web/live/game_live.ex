@@ -36,6 +36,7 @@ defmodule GoodtapWeb.GameLive do
          token_search: nil,
          token_query: "",
          token_results: [],
+         token_only: true,
          token_place_x: 0.1,
          token_place_y: 0.5,
          # Add counter
@@ -169,7 +170,7 @@ defmodule GoodtapWeb.GameLive do
             apply_action(socket, fn st, p -> Actions.copy_card(st, p, id) end)
 
           "w" ->
-            {:noreply, assign(socket, token_search: true, token_query: "", token_results: [])}
+            {:noreply, assign(socket, token_search: true, token_query: "", token_results: [], token_only: true)}
 
           "x" ->
             apply_action(socket, fn st, p -> Actions.untap_all(st, p) end)
@@ -423,18 +424,20 @@ defmodule GoodtapWeb.GameLive do
           {_, "hand"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
-              Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
+              Enum.reduce(Enum.with_index(all_ids), {:ok, state}, fn {sid, i}, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
-                Actions.move_to_hand(st, player, sid, src, nil)
+                idx = if is_integer(insert_index), do: insert_index + i, else: nil
+                Actions.move_to_hand(st, player, sid, src, idx)
               end) |> elem(1) |> then(&{:ok, &1})
             end)
 
           {_, "deck"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
-              Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
+              Enum.reduce(Enum.with_index(all_ids), {:ok, state}, fn {sid, i}, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
-                Actions.move_to_deck(st, player, sid, src, nil)
+                idx = if is_integer(insert_index), do: insert_index + i, else: nil
+                Actions.move_to_deck(st, player, sid, src, idx)
               end) |> elem(1) |> then(&{:ok, &1})
             end)
 
@@ -520,20 +523,28 @@ defmodule GoodtapWeb.GameLive do
        token_search: true,
        token_query: "",
        token_results: [],
+       token_only: true,
        token_place_x: x,
        token_place_y: y
      )}
   end
 
-  def handle_event("token_search", %{"query" => query}, socket) do
+  def handle_event("token_search", params, socket) do
+    query = params["query"] || ""
+    token_only = params["token_only"] == "true"
+
     results =
       if String.length(query) >= 2 do
-        Catalog.search_cards(query, 15)
+        if token_only do
+          Catalog.search_tokens(query, 15)
+        else
+          Catalog.search_cards(query, 15)
+        end
       else
         []
       end
 
-    {:noreply, assign(socket, token_query: query, token_results: results)}
+    {:noreply, assign(socket, token_query: query, token_only: token_only, token_results: results)}
   end
 
   def handle_event("create_token", %{"card_id" => card_id}, socket) do
@@ -1159,7 +1170,7 @@ defmodule GoodtapWeb.GameLive do
       <%!-- Card Preview Panel (shown on hover via JS, hidden during drag) --%>
       <div
         id="card-preview-panel"
-        class="fixed top-1/2 -translate-y-1/2 z-40 pointer-events-none"
+        class="fixed top-1/2 -translate-y-1/2 z-[9999] pointer-events-none"
         style="display: none; right: 12px;"
       >
         <img
@@ -1253,24 +1264,45 @@ defmodule GoodtapWeb.GameLive do
               value={@token_query}
               phx-debounce="200"
               placeholder="Search cards or tokens..."
-              class="input input-bordered w-full bg-gray-700 mb-3"
+              class="input input-bordered w-full bg-gray-700 mb-2"
               autofocus
             />
+            <label class="flex items-center gap-2 text-sm text-gray-300 mb-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                name="token_only"
+                value="true"
+                checked={@token_only}
+                class="checkbox checkbox-sm"
+              />
+              Tokens only
+            </label>
           </form>
 
-          <div class="space-y-1 max-h-64 overflow-y-auto">
+          <div class="flex flex-wrap gap-3 max-h-72 overflow-y-auto py-1">
             <%= for card <- @token_results do %>
+              <%
+                img_url =
+                  get_in(card.data, ["image_uris", "normal"]) ||
+                  get_in(card.data, ["card_faces", Access.at(0), "image_uris", "normal"])
+              %>
               <button
                 phx-click="create_token"
                 phx-value-card_id={card.id}
-                class="w-full text-left px-3 py-2 rounded hover:bg-gray-700 text-sm flex items-center gap-2"
+                class="flex flex-col items-center gap-1 rounded hover:ring-2 hover:ring-purple-400 transition-all"
+                title={card.name}
+                data-card-img={img_url || "/images/CardBack.png"}
               >
-                <span class="badge badge-xs badge-outline">{card.layout}</span>
-                {card.name}
+                <img
+                  src={img_url || "/images/CardBack.png"}
+                  class="h-28 w-auto rounded shadow"
+                  draggable="false"
+                />
+                <span class="text-xs text-gray-300 max-w-16 truncate">{card.name}</span>
               </button>
             <% end %>
 
-            <div :if={@token_query != "" && @token_results == []} class="text-gray-400 text-sm py-2 text-center">
+            <div :if={@token_query != "" && @token_results == []} class="text-gray-400 text-sm py-2 text-center w-full">
               No cards found
             </div>
           </div>
