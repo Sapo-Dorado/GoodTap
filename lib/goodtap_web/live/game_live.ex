@@ -300,6 +300,11 @@ defmodule GoodtapWeb.GameLive do
     else
       socket =
         case target_zone do
+          "battlefield" when from_zone == "battlefield" ->
+            apply_action_inline(socket, fn state, player ->
+              Actions.update_battlefield_position(state, player, instance_id, x, y)
+            end)
+
           "battlefield" ->
             apply_action_inline(socket, fn state, player ->
               Actions.move_to_battlefield(state, player, instance_id, from_zone, x, y)
