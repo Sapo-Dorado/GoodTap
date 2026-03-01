@@ -878,12 +878,13 @@ defmodule GoodtapWeb.GameLive do
               />
               <%!-- Transparent draggable overlay for the top card --%>
               <div
+                id={"deck-top-#{hd(zone_cards(@my, "deck"))["instance_id"]}"}
                 class="absolute inset-0 cursor-pointer"
                 data-draggable="true"
                 data-instance-id={hd(zone_cards(@my, "deck"))["instance_id"]}
                 data-zone="deck"
                 data-owner={@my_role}
-                data-card-img={State.card_back_url()}
+                data-card-img={card_display_url(hd(zone_cards(@my, "deck")), @my_role, @my_role, "deck")}
               ></div>
               <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none" style="z-index: 1;">
                 {length(zone_cards(@my, "deck"))}
