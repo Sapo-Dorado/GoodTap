@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <.live_title default="Goodtap">
+      {assigns[:page_title]}
+    </.live_title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    </script>
+  </head>
+  <body class="bg-gray-950 text-gray-100 overflow-hidden h-screen flex flex-col">
+    <nav class="flex items-center gap-4 px-6 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
+      <.link href={~p"/"} class="text-xl font-bold text-purple-400 hover:text-purple-300 mr-auto">
+        Goodtap
+      </.link>
+      <%= if @current_scope do %>
+        <.link href={~p"/games"} class="text-sm text-gray-300 hover:text-white">Games</.link>
+        <.link href={~p"/decks"} class="text-sm text-gray-300 hover:text-white">Decks</.link>
+        <span class="text-sm text-gray-400">{@current_scope.user.username}</span>
+        <.link href={~p"/users/log-out"} method="delete" class="text-sm text-gray-400 hover:text-red-400">
+          Log out
+        </.link>
+      <% else %>
+        <.link href={~p"/users/register"} class="text-sm text-gray-300 hover:text-white">Register</.link>
+        <.link href={~p"/users/log-in"} class="text-sm text-gray-300 hover:text-white">Log in</.link>
+      <% end %>
+    </nav>
+    <div class="flex-1 min-h-0">
+      {@inner_content}
+    </div>
+  </body>
+</html>

@@ -561,7 +561,7 @@ defmodule GoodtapWeb.GameLive do
     ~H"""
     <div
       id="game-container"
-      class="game-layout h-screen flex flex-col overflow-hidden bg-gray-950 select-none"
+      class="game-layout h-full flex flex-col overflow-hidden bg-gray-950 select-none"
       phx-hook="DragDrop"
       data-my-role={@my_role}
     >

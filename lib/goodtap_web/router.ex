@@ -68,9 +68,14 @@ defmodule GoodtapWeb.Router do
       on_mount: [{GoodtapWeb.UserAuth, :require_authenticated}] do
       live "/games", GameListLive, :index
       live "/games/:id/setup", GameSetupLive, :show
-      live "/games/:id/play", GameLive, :show
       live "/games/join/:token", GameJoinLive, :show
       live "/decks", DeckListLive, :index
+    end
+
+    live_session :game,
+      root_layout: {GoodtapWeb.Layouts, :game},
+      on_mount: [{GoodtapWeb.UserAuth, :require_authenticated}] do
+      live "/games/:id/play", GameLive, :show
     end
   end
 end
