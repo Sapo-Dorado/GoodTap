@@ -32,7 +32,7 @@ defmodule GoodtapWeb.Hotkeys do
   end
 
   def valid_actions_for("deck") do
-    [:draw, :shuffle, :scry]
+    [:draw, :shuffle, :scry, :find_card]
   end
 
   def valid_actions_for("deck_top") do
@@ -62,5 +62,6 @@ defmodule GoodtapWeb.Hotkeys do
   def action_label(:add_counter), do: "Add Counter"
   def action_label(:copy_card), do: "Copy Card"
   def action_label(:create_token), do: "Create Token"
+  def action_label(:find_card), do: "Find Card"
   def action_label(other), do: to_string(other)
 end

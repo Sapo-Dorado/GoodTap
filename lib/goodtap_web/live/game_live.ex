@@ -197,6 +197,11 @@ defmodule GoodtapWeb.GameLive do
     end)
   end
 
+  def handle_event("action", %{"type" => "find_card"}, socket) do
+    player = socket.assigns.my_role
+    {:noreply, assign(socket, open_zone: {player, "deck", %{find: true, query: ""}}, context_menu: nil)}
+  end
+
   def handle_event("action", %{"type" => "shuffle"}, socket) do
     apply_action(socket, fn state, player ->
       Actions.shuffle(state, player)
@@ -283,7 +288,7 @@ defmodule GoodtapWeb.GameLive do
   # ─── Zone Popup ───────────────────────────────────────────────────────────
 
   def handle_event("open_zone", %{"zone" => zone, "owner" => owner}, socket) do
-    {:noreply, assign(socket, open_zone: {owner, zone})}
+    {:noreply, assign(socket, open_zone: {owner, zone, %{}})}
   end
 
   def handle_event("close_zone", _params, socket) do
@@ -357,7 +362,7 @@ defmodule GoodtapWeb.GameLive do
       # close it when a card is moved out.
       open_zone =
         case socket.assigns.open_zone do
-          {owner, zone} when zone == target_zone and owner == socket.assigns.my_role -> {owner, zone}
+          {owner, zone, opts} when zone == target_zone and owner == socket.assigns.my_role -> {owner, zone, opts}
           _ -> nil
         end
 
@@ -462,6 +467,17 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_event("close_token_search", _params, socket) do
     {:noreply, assign(socket, token_search: nil)}
+  end
+
+  # ─── Find Card ────────────────────────────────────────────────────────────
+
+  def handle_event("find_card_search", %{"query" => query}, socket) do
+    case socket.assigns.open_zone do
+      {owner, zone, opts} ->
+        {:noreply, assign(socket, open_zone: {owner, zone, %{opts | query: query}})}
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   # ─── End Game ─────────────────────────────────────────────────────────────
@@ -941,36 +957,58 @@ defmodule GoodtapWeb.GameLive do
           class="bg-gray-900 border-t border-gray-600 shrink-0"
           style="height: 180px;"
         >
+          <% {zone_owner, zone_name, zone_opts} = @open_zone %>
+          <% zone_player = if zone_owner == @my_role, do: @my, else: @opp %>
+          <% is_find = Map.get(zone_opts, :find, false) %>
           <div class="flex items-center justify-between px-4 py-1 border-b border-gray-700">
-            <span class="font-semibold text-sm">
-              {elem(@open_zone, 1) |> String.capitalize()} ({length(zone_cards(
-                if(elem(@open_zone, 0) == @my_role, do: @my, else: @opp),
-                elem(@open_zone, 1)
-              ))} cards)
-            </span>
+            <div class="flex items-center gap-3">
+              <span class="font-semibold text-sm">
+                {if is_find, do: "Find Card", else: String.capitalize(zone_name)} ({length(zone_cards(zone_player, zone_name))} cards)
+              </span>
+              <form :if={is_find} phx-change="find_card_search">
+                <input
+                  type="text"
+                  name="query"
+                  value={Map.get(zone_opts, :query, "")}
+                  phx-debounce="100"
+                  placeholder="Filter by name..."
+                  class="input input-xs bg-gray-700 w-40 placeholder-gray-500"
+                  autofocus
+                />
+              </form>
+            </div>
             <button phx-click="close_zone" class="text-gray-400 hover:text-white text-xl leading-none">×</button>
           </div>
           <div
             class="flex overflow-x-auto"
             style="height: 148px;"
-            data-drop-zone={elem(@open_zone, 1)}
-            {if elem(@open_zone, 1) == "deck", do: [{"data-no-preview", ""}], else: []}
+            data-drop-zone={zone_name}
+            {if zone_name == "deck" and not is_find, do: [{"data-no-preview", ""}], else: []}
           >
             <div class="flex items-center gap-2 px-4 py-2 min-w-max mx-auto">
-              <%= for card <- zone_cards(
-                if(elem(@open_zone, 0) == @my_role, do: @my, else: @opp),
-                elem(@open_zone, 1)
-              ) do %>
+              <%
+                cards = zone_cards(zone_player, zone_name)
+                cards = if is_find do
+                  query = String.downcase(Map.get(zone_opts, :query, ""))
+                  cards
+                  |> Enum.sort_by(& &1["name"])
+                  |> Enum.filter(fn c -> query == "" or String.contains?(String.downcase(c["name"]), query) end)
+                else
+                  cards
+                end
+              %>
+              <%= for card <- cards do %>
+                <% display_card = if is_find, do: Map.put(card, "known", true), else: card %>
                 <div
                   class="shrink-0 cursor-pointer hover:scale-105 transition-transform"
                   data-draggable="true"
                   data-instance-id={card["instance_id"]}
-                  data-zone={elem(@open_zone, 1)}
-                  data-owner={elem(@open_zone, 0)}
-                  data-card-img={card_display_url(card, @my_role, elem(@open_zone, 0), elem(@open_zone, 1))}
+                  data-zone={zone_name}
+                  data-owner={zone_owner}
+                  data-card-img={card_display_url(display_card, @my_role, zone_owner, zone_name)}
                 >
                   <img
-                    src={card_display_url(card, @my_role, elem(@open_zone, 0), elem(@open_zone, 1))}
+                    src={card_display_url(display_card, @my_role, zone_owner, zone_name)}
                     class="h-32 w-auto rounded shadow"
                     draggable="false"
                   />
