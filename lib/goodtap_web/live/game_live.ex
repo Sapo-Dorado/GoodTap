@@ -572,7 +572,7 @@ defmodule GoodtapWeb.GameLive do
         >
           <%= for card <- zone_cards(@opp, "battlefield") do %>
             <div
-              class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "rotate-90", else: "")]}
+              class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "is-tapped", else: "")]}
               style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
             >
               <%!-- counter-rotate so cards appear right-side-up inside the 180° flipped field --%>
@@ -614,7 +614,7 @@ defmodule GoodtapWeb.GameLive do
               id={"card-#{card["instance_id"]}"}
               class={[
                 "card-on-battlefield absolute cursor-pointer transition-transform",
-                if(card["tapped"], do: "rotate-90", else: ""),
+                if(card["tapped"], do: "is-tapped", else: ""),
 ]}
               style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
               data-draggable="true"

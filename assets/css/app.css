@@ -150,7 +150,7 @@
 }
 
 /* Tapped rotation - rotate 90° keeping the card center in place */
-.card-on-battlefield.rotate-90 {
+.card-on-battlefield.is-tapped {
   transform: rotate(90deg);
   transform-origin: center center;
 }

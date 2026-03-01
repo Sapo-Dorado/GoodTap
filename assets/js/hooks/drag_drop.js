@@ -115,7 +115,7 @@ const DragDrop = {
     const zone = card.dataset.zone;
     const owner = card.dataset.owner;
     const imgSrc = card.dataset.cardImg;
-    const isTapped = card.classList.contains("rotate-90");
+    const isTapped = card.classList.contains("is-tapped");
 
     const rect = card.getBoundingClientRect();
     const offsetX = event.clientX - rect.left;
