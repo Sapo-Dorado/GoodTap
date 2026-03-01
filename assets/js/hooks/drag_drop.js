@@ -18,6 +18,7 @@ const DragDrop = {
     this.previewImg = document.getElementById("card-preview-img");
 
     const onMousedown = (e) => {
+      if (e.target.closest("[data-no-hotkey]")) return;
       const card = e.target.closest("[data-draggable]");
       if (!card) return;
       if (e.button !== 0) return;
@@ -27,6 +28,11 @@ const DragDrop = {
 
     const onMouseover = (e) => {
       if (this.dragging) return;
+      // Ignore events from counter/tracker interactive areas
+      if (e.target.closest("[data-no-hotkey]")) {
+        this.hoveredCard = null;
+        return;
+      }
       const card = e.target.closest("[data-draggable]");
       if (card) {
         this.hoveredCard = {
@@ -43,8 +49,12 @@ const DragDrop = {
 
     const onMouseout = (e) => {
       const card = e.target.closest("[data-draggable]");
-      if (card && !card.contains(e.relatedTarget)) {
-        this.hoveredCard = null;
+      if (card) {
+        const leavingCard = !card.contains(e.relatedTarget);
+        const enteringNoHotkey = e.relatedTarget && e.relatedTarget.closest("[data-no-hotkey]");
+        if (leavingCard || enteringNoHotkey) {
+          this.hoveredCard = null;
+        }
       }
       const imgEl = e.target.closest("[data-card-img]");
       if (!imgEl) return;

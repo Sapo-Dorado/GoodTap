@@ -140,13 +140,15 @@
 /* transform-origin: top left so left/top % positions map to card top-left corner */
 .card-on-battlefield {
   transform-origin: top left;
+}
+
+.card-draggable {
   transition: box-shadow 0.1s ease;
 }
 
-.card-on-battlefield:hover {
+.card-draggable:hover {
   box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.6);
   border-radius: 4px;
-  z-index: 10;
 }
 
 /* Tapped rotation - rotate 90° keeping the card center in place */

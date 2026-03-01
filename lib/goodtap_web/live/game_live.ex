@@ -602,20 +602,23 @@ defmodule GoodtapWeb.GameLive do
                 style="transform: rotate(180deg); transform-origin: center;"
                 data-card-img={card_display_url(card, @my_role, @opp_role, "battlefield")}
               >
-                <img
-                  src={card_display_url(card, @my_role, @opp_role, "battlefield")}
-                  class="card-image rounded shadow-lg"
-                  draggable="false"
-                />
-                <%= if card["counters"] != [] do %>
-                  <div class="absolute -top-2 -right-2 flex gap-1">
-                    <%= for counter <- card["counters"] || [] do %>
-                      <span class="bg-blue-600 text-white text-xs rounded-full px-1.5 py-0.5 font-mono">
-                        {counter["value"]}
-                      </span>
-                    <% end %>
-                  </div>
-                <% end %>
+                <div class="flex flex-col items-center">
+                  <img
+                    src={card_display_url(card, @my_role, @opp_role, "battlefield")}
+                    class="card-image rounded shadow-lg"
+                    draggable="false"
+                  />
+                  <%= if (card["counters"] || []) != [] do %>
+                    <div class="flex flex-col gap-0.5 mt-0.5 items-center">
+                      <%= for counter <- card["counters"] || [] do %>
+                        <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight w-full">
+                          <span class="font-mono text-sm font-bold">{counter["value"]}</span>
+                          <span class="text-xs text-gray-300 text-center">{counter["name"]}</span>
+                        </div>
+                      <% end %>
+                    </div>
+                  <% end %>
+                </div>
               </div>
             </div>
           <% end %>
@@ -637,7 +640,7 @@ defmodule GoodtapWeb.GameLive do
               class={[
                 "card-on-battlefield absolute cursor-pointer transition-transform",
                 if(card["tapped"], do: "is-tapped", else: ""),
-]}
+              ]}
               style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
               data-draggable="true"
               data-instance-id={card["instance_id"]}
@@ -645,40 +648,49 @@ defmodule GoodtapWeb.GameLive do
               data-owner={@my_role}
               data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
             >
-              <img
-                src={card_display_url(card, @my_role, @my_role, "battlefield")}
-                class="card-image rounded shadow-lg"
-                draggable="false"
-              />
+              <div class="flex flex-col items-center">
+                <%!-- Card image with hover highlight --%>
+                <div class="card-draggable">
+                  <img
+                    src={card_display_url(card, @my_role, @my_role, "battlefield")}
+                    class="card-image rounded shadow-lg"
+                    draggable="false"
+                  />
+                </div>
 
-              <%!-- Counters display --%>
-              <div :if={(card["counters"] || []) != []} class="absolute -top-2 -right-2 flex gap-1">
-                <%= for {counter, cidx} <- Enum.with_index(card["counters"] || []) do %>
-                  <div class="bg-blue-600 text-white text-xs rounded px-1 flex items-center gap-1">
-                    <span class="text-xs">{counter["name"]}</span>
-                    <button
-                      phx-click="adjust_counter"
-                      phx-value-instance_id={card["instance_id"]}
-                      phx-value-counter_index={cidx}
-                      phx-value-delta="-1"
-                      class="text-xs hover:text-red-300"
-                    >-</button>
-                    <span class="font-mono">{counter["value"]}</span>
-                    <button
-                      phx-click="adjust_counter"
-                      phx-value-instance_id={card["instance_id"]}
-                      phx-value-counter_index={cidx}
-                      phx-value-delta="1"
-                      class="text-xs hover:text-green-300"
-                    >+</button>
-                    <button
-                      phx-click="remove_counter"
-                      phx-value-instance_id={card["instance_id"]}
-                      phx-value-counter_index={cidx}
-                      class="text-xs hover:text-red-400 ml-1"
-                    >×</button>
-                  </div>
-                <% end %>
+                <%!-- Counters display — vertical stack below card, centered --%>
+                <div :if={(card["counters"] || []) != []} class="flex flex-col gap-0.5 mt-0.5 items-center" data-no-hotkey>
+                  <%= for {counter, cidx} <- Enum.with_index(card["counters"] || []) do %>
+                    <div class="relative group/counter">
+                      <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight">
+                        <div class="flex items-center gap-1 justify-center">
+                          <button
+                            phx-click="adjust_counter"
+                            phx-value-instance_id={card["instance_id"]}
+                            phx-value-counter_index={cidx}
+                            phx-value-delta="-1"
+                            class="text-xs hover:text-red-300 shrink-0"
+                          >-</button>
+                          <span class="font-mono text-sm font-bold">{counter["value"]}</span>
+                          <button
+                            phx-click="adjust_counter"
+                            phx-value-instance_id={card["instance_id"]}
+                            phx-value-counter_index={cidx}
+                            phx-value-delta="1"
+                            class="text-xs hover:text-green-300 shrink-0"
+                          >+</button>
+                        </div>
+                        <span class="text-xs text-gray-300 text-center">{counter["name"]}</span>
+                      </div>
+                      <button
+                        phx-click="remove_counter"
+                        phx-value-instance_id={card["instance_id"]}
+                        phx-value-counter_index={cidx}
+                        class="absolute -right-4 top-1/2 -translate-y-1/2 hidden group-hover/counter:flex items-center justify-center bg-black text-white text-xs rounded-r w-4 h-full hover:text-red-400"
+                      >×</button>
+                    </div>
+                  <% end %>
+                </div>
               </div>
             </div>
           <% end %>
@@ -844,25 +856,27 @@ defmodule GoodtapWeb.GameLive do
 
           <%!-- Trackers --%>
           <%= for {tracker, idx} <- Enum.with_index(@my["trackers"] || []) do %>
-            <div class="flex items-center gap-1 text-xs bg-gray-700 rounded px-2 py-1">
-              <span>{tracker["name"]}</span>
-              <button
-                phx-click="adjust_tracker"
-                phx-value-index={idx}
-                phx-value-delta="-1"
-                class="hover:text-red-400"
-              >-</button>
-              <span class="font-mono font-bold">{tracker["value"]}</span>
-              <button
-                phx-click="adjust_tracker"
-                phx-value-index={idx}
-                phx-value-delta="1"
-                class="hover:text-green-400"
-              >+</button>
+            <div class="relative group/tracker">
+              <div class="flex items-center gap-1 text-xs bg-gray-700 rounded px-2 py-1">
+                <span>{tracker["name"]}</span>
+                <button
+                  phx-click="adjust_tracker"
+                  phx-value-index={idx}
+                  phx-value-delta="-1"
+                  class="hover:text-red-400"
+                >-</button>
+                <span class="font-mono font-bold">{tracker["value"]}</span>
+                <button
+                  phx-click="adjust_tracker"
+                  phx-value-index={idx}
+                  phx-value-delta="1"
+                  class="hover:text-green-400"
+                >+</button>
+              </div>
               <button
                 phx-click="remove_tracker"
                 phx-value-index={idx}
-                class="hover:text-red-400 ml-1"
+                class="absolute -right-4 top-0 hidden group-hover/tracker:flex items-center justify-center bg-black text-white text-xs rounded-r w-4 h-full hover:text-red-400"
               >×</button>
             </div>
           <% end %>
@@ -1090,7 +1104,7 @@ defmodule GoodtapWeb.GameLive do
             <input
               type="text"
               name="name"
-              placeholder="Counter name (e.g. +1/+1, Poison)"
+              value="+1/+1"
               class="input input-bordered w-full bg-gray-700 mb-3"
               autofocus
             />

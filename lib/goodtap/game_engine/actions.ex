@@ -1,8 +1,6 @@
 defmodule Goodtap.GameEngine.Actions do
   alias Goodtap.GameEngine.State
 
-  @max_counters 3
-
   # ─── Tap ──────────────────────────────────────────────────────────────────
 
   def tap(state, player, instance_id) do
@@ -15,7 +13,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_graveyard(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false)
+      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters()
 
       if card["is_token"] do
         {:ok, state}
@@ -29,7 +27,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_exile(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false)
+      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters()
 
       if card["is_token"] do
         {:ok, state}
@@ -65,7 +63,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_hand(state, player, instance_id, source_zone, insert_index \\ nil) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = Map.put(card, "tapped", false)
+      card = card |> Map.put("tapped", false) |> reset_counters()
 
       if card["is_token"] do
         {:ok, state}
@@ -83,7 +81,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_deck_top(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false) |> mark_known_from(source_zone)
+      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_from(source_zone)
 
       if card["is_token"] do
         {:ok, state}
@@ -95,7 +93,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_deck_bottom(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false) |> mark_known_from(source_zone)
+      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_from(source_zone)
 
       if card["is_token"] do
         {:ok, state}
@@ -240,13 +238,8 @@ defmodule Goodtap.GameEngine.Actions do
   def add_counter(state, player, instance_id, counter_name) do
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
       counters = card["counters"] || []
-
-      if length(counters) >= @max_counters do
-        card
-      else
-        new_counter = %{"name" => counter_name, "value" => 0}
-        Map.put(card, "counters", counters ++ [new_counter])
-      end
+      new_counter = %{"name" => counter_name, "value" => 0}
+      Map.put(card, "counters", counters ++ [new_counter])
     end)
   end
 
@@ -392,6 +385,8 @@ defmodule Goodtap.GameEngine.Actions do
       List.insert_at(cards, clamped, card)
     end)
   end
+
+  defp reset_counters(card), do: Map.put(card, "counters", [])
 
   defp reset_face(card) do
     card
