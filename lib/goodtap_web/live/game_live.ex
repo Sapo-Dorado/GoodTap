@@ -805,7 +805,7 @@ defmodule GoodtapWeb.GameLive do
           <%!-- Graveyard pile: bottom-left (sideways / landscape) --%>
           <div
             id="pile-graveyard"
-            class="zone-pile absolute cursor-pointer rounded shadow-lg overflow-hidden"
+            class="zone-pile absolute rounded shadow-lg overflow-hidden"
             style="width: 78px; height: 56px; bottom: 8px; left: 8px; z-index: 20;"
             data-drop-zone="graveyard"
             data-pile-zone="graveyard"
@@ -814,18 +814,29 @@ defmodule GoodtapWeb.GameLive do
             phx-value-owner={@my_role}
           >
             <%= if zone_cards(@my, "graveyard") != [] do %>
+              <%!-- Persistent background card image (always visible, even during drag) --%>
               <img
                 src={card_display_url(hd(zone_cards(@my, "graveyard")), @my_role, @my_role, "graveyard")}
-                class="rounded"
+                class="rounded pointer-events-none"
                 style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
                 draggable="false"
               />
+              <%!-- Transparent draggable overlay for the top card --%>
+              <div
+                id={"graveyard-top-#{hd(zone_cards(@my, "graveyard"))["instance_id"]}"}
+                class="absolute inset-0 cursor-pointer"
+                data-draggable="true"
+                data-instance-id={hd(zone_cards(@my, "graveyard"))["instance_id"]}
+                data-zone="graveyard"
+                data-owner={@my_role}
+                data-card-img={card_display_url(hd(zone_cards(@my, "graveyard")), @my_role, @my_role, "graveyard")}
+              ></div>
             <% else %>
-              <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
+              <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer">
                 <span class="text-gray-400 text-xs font-semibold">GY</span>
               </div>
             <% end %>
-            <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4">
+            <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
               {length(zone_cards(@my, "graveyard"))}
             </div>
           </div>
@@ -833,7 +844,7 @@ defmodule GoodtapWeb.GameLive do
           <%!-- Exile pile: above graveyard on left (sideways / landscape) --%>
           <div
             id="pile-exile"
-            class="zone-pile absolute cursor-pointer rounded shadow-lg overflow-hidden"
+            class="zone-pile absolute rounded shadow-lg overflow-hidden"
             style="width: 78px; height: 56px; bottom: 72px; left: 8px; z-index: 20;"
             data-drop-zone="exile"
             data-pile-zone="exile"
@@ -842,18 +853,29 @@ defmodule GoodtapWeb.GameLive do
             phx-value-owner={@my_role}
           >
             <%= if zone_cards(@my, "exile") != [] do %>
+              <%!-- Persistent background card image (always visible, even during drag) --%>
               <img
                 src={card_display_url(hd(zone_cards(@my, "exile")), @my_role, @my_role, "exile")}
-                class="rounded"
+                class="rounded pointer-events-none"
                 style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
                 draggable="false"
               />
+              <%!-- Transparent draggable overlay for the top card --%>
+              <div
+                id={"exile-top-#{hd(zone_cards(@my, "exile"))["instance_id"]}"}
+                class="absolute inset-0 cursor-pointer"
+                data-draggable="true"
+                data-instance-id={hd(zone_cards(@my, "exile"))["instance_id"]}
+                data-zone="exile"
+                data-owner={@my_role}
+                data-card-img={card_display_url(hd(zone_cards(@my, "exile")), @my_role, @my_role, "exile")}
+              ></div>
             <% else %>
-              <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
+              <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer">
                 <span class="text-gray-400 text-xs font-semibold">EX</span>
               </div>
             <% end %>
-            <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4">
+            <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
               {length(zone_cards(@my, "exile"))}
             </div>
           </div>
@@ -873,7 +895,7 @@ defmodule GoodtapWeb.GameLive do
             <%= if zone_cards(@my, "deck") != [] do %>
               <%!-- Persistent background image (always visible, even during drag) --%>
               <img
-                src={State.card_back_url()}
+                src={card_display_url(hd(zone_cards(@my, "deck")), @my_role, @my_role, "deck")}
                 class="absolute inset-0 w-full h-full object-cover rounded pointer-events-none"
                 draggable="false"
               />

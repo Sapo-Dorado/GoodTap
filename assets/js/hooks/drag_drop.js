@@ -13,6 +13,7 @@ const DragDrop = {
     this.dropZoneGhost = null;
     this.hoveredCard = null;
     this.insertGhost = null;
+    this._insertGhostWrapper = null;
     this._insertIndex = null;
     this.lasso = null;
     this.lassoEl = null;
@@ -573,6 +574,7 @@ const DragDrop = {
   },
 
   // Show an insert-ghost indicator for horizontal list zones (hand, deck, graveyard, exile).
+  // Only used for the open-zone popup — not for the small pile elements.
   showInsertGhost(zoneName, zoneEl, x) {
     // Cards are inside the inner flex wrapper (first child of the scroll container)
     const innerEl = zoneEl.firstElementChild || zoneEl;
@@ -593,28 +595,68 @@ const DragDrop = {
 
     this._insertIndex = insertIndex;
 
-    const ghostHeight = LIST_ZONES[zoneName] || 96;
+    const isRotated = zoneName === "graveyard" || zoneName === "exile";
     const ghostSrc = this.dragging
       ? (document.querySelector(`[data-instance-id="${this.dragging.instanceId}"]`)?.dataset?.cardImg || "")
       : "";
 
     this.insertGhost = document.createElement("img");
     this.insertGhost.src = ghostSrc;
-    this.insertGhost.style.cssText = `
-      height: ${ghostHeight}px;
-      width: auto;
-      border-radius: 4px;
-      opacity: 0.4;
-      pointer-events: none;
-      flex-shrink: 0;
-      align-self: center;
-      outline: 2px solid rgba(167, 139, 250, 0.8);
-    `;
 
-    if (insertAfterEl) {
-      insertAfterEl.after(this.insertGhost);
+    if (isRotated) {
+      // Pile shows cards as 56×78 portrait rotated 90° (visually 78×56 landscape).
+      // Use a wrapper div sized to the visual landscape footprint so the ghost
+      // participates in the flex layout at the right visual width.
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText = `
+        width: 78px;
+        height: 56px;
+        flex-shrink: 0;
+        align-self: center;
+        position: relative;
+        pointer-events: none;
+        outline: 2px solid rgba(167, 139, 250, 0.8);
+        border-radius: 4px;
+        overflow: hidden;
+      `;
+      this.insertGhost.style.cssText = `
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 56px;
+        height: 78px;
+        object-fit: cover;
+        transform: translate(-50%, -50%) rotate(90deg);
+        opacity: 0.4;
+        pointer-events: none;
+        border-radius: 4px;
+      `;
+      wrapper.appendChild(this.insertGhost);
+      // Re-use insertGhost to track the wrapper for cleanup
+      this._insertGhostWrapper = wrapper;
+      if (insertAfterEl) {
+        insertAfterEl.after(wrapper);
+      } else {
+        innerEl.prepend(wrapper);
+      }
     } else {
-      innerEl.prepend(this.insertGhost);
+      const ghostHeight = LIST_ZONES[zoneName] || 96;
+      this.insertGhost.style.cssText = `
+        height: ${ghostHeight}px;
+        width: auto;
+        border-radius: 4px;
+        opacity: 0.4;
+        pointer-events: none;
+        flex-shrink: 0;
+        align-self: center;
+        outline: 2px solid rgba(167, 139, 250, 0.8);
+      `;
+      this._insertGhostWrapper = null;
+      if (insertAfterEl) {
+        insertAfterEl.after(this.insertGhost);
+      } else {
+        innerEl.prepend(this.insertGhost);
+      }
     }
   },
 
@@ -622,6 +664,10 @@ const DragDrop = {
     if (this.dropZoneGhost) {
       this.dropZoneGhost.remove();
       this.dropZoneGhost = null;
+    }
+    if (this._insertGhostWrapper) {
+      this._insertGhostWrapper.remove();
+      this._insertGhostWrapper = null;
     }
     if (this.insertGhost) {
       this.insertGhost.remove();
@@ -631,27 +677,71 @@ const DragDrop = {
     const dropInfo = this.findDropZone(x, y);
     if (!dropInfo) return;
 
-    if (dropInfo.zone in LIST_ZONES) {
+    const isPileEl = !!dropInfo.el.dataset.pileZone;
+
+    if (dropInfo.zone in LIST_ZONES && !isPileEl) {
+      // Open-zone popup: show insert ghost at the appropriate position
       this.showInsertGhost(dropInfo.zone, dropInfo.el, x);
       return;
     }
 
+    if (isPileEl && dropInfo.zone !== fromZone) {
+      // Small pile element: show a card ghost image floating over the pile.
+      // Reset _insertIndex so the drop sends null → server uses default (prepend/top).
+      this._insertIndex = null;
+      this.showPileGhost(dropInfo.zone, dropInfo.el);
+      return;
+    }
+
+    // Other non-battlefield zones: purple border overlay
     if (dropInfo.zone !== "battlefield" && dropInfo.zone !== "opp-battlefield" && dropInfo.zone !== fromZone) {
+      const r = dropInfo.el.getBoundingClientRect();
       this.dropZoneGhost = document.createElement("div");
       this.dropZoneGhost.style.cssText = `
-        position: absolute;
-        inset: 0;
+        position: fixed;
+        left: ${r.left}px;
+        top: ${r.top}px;
+        width: ${r.width}px;
+        height: ${r.height}px;
         border: 2px solid rgba(167, 139, 250, 0.8);
         border-radius: 4px;
         pointer-events: none;
         background: rgba(167, 139, 250, 0.1);
-        z-index: 100;
+        z-index: 9998;
+        box-sizing: border-box;
       `;
-      if (getComputedStyle(dropInfo.el).position === "static") {
-        dropInfo.el.style.position = "relative";
-      }
-      dropInfo.el.appendChild(this.dropZoneGhost);
+      document.body.appendChild(this.dropZoneGhost);
     }
+  },
+
+  // Show a card image ghost floating over a small pile element (deck/graveyard/exile).
+  showPileGhost(zoneName, pileEl) {
+    const ghostSrc = this.dragging
+      ? (document.querySelector(`[data-instance-id="${this.dragging.instanceId}"]`)?.dataset?.cardImg || "")
+      : "";
+
+    const r = pileEl.getBoundingClientRect();
+    const isRotated = zoneName === "graveyard" || zoneName === "exile";
+
+    const img = document.createElement("img");
+    img.src = ghostSrc;
+    img.style.cssText = `
+      position: fixed;
+      width: 56px;
+      height: 78px;
+      object-fit: cover;
+      border-radius: 4px;
+      opacity: 0.7;
+      pointer-events: none;
+      outline: 2px solid rgba(167, 139, 250, 0.8);
+      z-index: 9998;
+      ${isRotated
+        ? `left: ${r.left + r.width / 2 - 28}px; top: ${r.top + r.height / 2 - 39}px; transform: rotate(90deg);`
+        : `left: ${r.left + r.width / 2 - 28}px; top: ${r.top + r.height / 2 - 39}px;`
+      }
+    `;
+    document.body.appendChild(img);
+    this.dropZoneGhost = img;
   },
 
   cleanupDragGhost() {
@@ -662,6 +752,10 @@ const DragDrop = {
     if (this.dropZoneGhost) {
       this.dropZoneGhost.remove();
       this.dropZoneGhost = null;
+    }
+    if (this._insertGhostWrapper) {
+      this._insertGhostWrapper.remove();
+      this._insertGhostWrapper = null;
     }
     if (this.insertGhost) {
       this.insertGhost.remove();
