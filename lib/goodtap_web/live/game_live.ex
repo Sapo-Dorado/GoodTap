@@ -101,11 +101,6 @@ defmodule GoodtapWeb.GameLive do
     {:noreply, assign(socket, log_open: !socket.assigns.log_open)}
   end
 
-  def handle_event("clear_log", _params, socket) do
-    new_state = put_in(socket.assigns.game_state, ["log"], [])
-    {:noreply, assign(socket, game_state: new_state)}
-  end
-
   # ─── Multi-Card Selection ─────────────────────────────────────────────────
 
   def handle_event("clear_selection", _params, socket) do
@@ -941,6 +936,17 @@ defmodule GoodtapWeb.GameLive do
           data-drop-zone="battlefield"
           phx-hook="Battlefield"
         >
+          <%!-- Log toggle — left edge, vertically centered --%>
+          <button
+            phx-click="toggle_log"
+            class={["absolute left-2 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1 p-1.5 rounded hover:bg-gray-700/60 transition-colors", if(@log_open, do: "text-blue-400", else: "text-gray-500 hover:text-gray-300")]}
+            title="Game Log"
+            data-no-hotkey
+          >
+            <span class="block w-4 h-0.5 bg-current rounded"></span>
+            <span class="block w-4 h-0.5 bg-current rounded"></span>
+            <span class="block w-4 h-0.5 bg-current rounded"></span>
+          </button>
           <%= for card <- zone_cards(@my, "battlefield") do %>
             <div
               id={"card-#{card["instance_id"]}"}
@@ -1227,13 +1233,6 @@ defmodule GoodtapWeb.GameLive do
 
           <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
             <span>Hand: {length(zone_cards(@my, "hand"))}</span>
-            <button
-              phx-click="toggle_log"
-              class={["hover:text-white transition-colors", if(@log_open, do: "text-blue-400", else: "")]}
-              title="Game Log"
-            >
-              Log
-            </button>
             <button phx-click="show_end_game" class="text-red-400 hover:text-red-300">
               End Game
             </button>
@@ -1361,10 +1360,7 @@ defmodule GoodtapWeb.GameLive do
     >
       <div class="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
         <span class="text-sm font-semibold">Game Log</span>
-        <div class="flex items-center gap-2">
-          <button phx-click="clear_log" class="text-xs text-gray-400 hover:text-white">Clear</button>
-          <button phx-click="toggle_log" class="text-gray-400 hover:text-white text-lg leading-none">×</button>
-        </div>
+        <button phx-click="toggle_log" class="text-gray-400 hover:text-white text-lg leading-none">×</button>
       </div>
       <div class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-1">
         <%= for entry <- (get_in(@game_state, ["log"]) || []) do %>
