@@ -123,6 +123,12 @@ defmodule GoodtapWeb.GameLive do
       "u" when not is_nil(id) ->
         {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
 
+      "t" when not is_nil(id) ->
+        apply_action(socket, fn st, p -> Actions.move_to_deck(st, p, id, zone) end)
+
+      "y" when not is_nil(id) ->
+        apply_action(socket, fn st, p -> Actions.move_to_deck_bottom(st, p, id, zone) end)
+
       "k" when not is_nil(id) ->
         apply_action(socket, fn st, p -> Actions.copy_card(st, p, id) end)
 
@@ -761,6 +767,7 @@ defmodule GoodtapWeb.GameLive do
             style="width: 56px; height: 78px; bottom: 8px; right: 8px; z-index: 20;"
             data-drop-zone="deck"
             data-pile-zone="deck"
+            data-no-preview
             phx-click="open_zone"
             phx-value-zone="deck"
             phx-value-owner={@my_role}
@@ -949,6 +956,7 @@ defmodule GoodtapWeb.GameLive do
             class="flex overflow-x-auto"
             style="height: 148px;"
             data-drop-zone={elem(@open_zone, 1)}
+            {if elem(@open_zone, 1) == "deck", do: [{"data-no-preview", ""}], else: []}
           >
             <div class="flex items-center gap-2 px-4 py-2 min-w-max mx-auto">
               <%= for card <- zone_cards(

@@ -45,6 +45,7 @@ const DragDrop = {
       }
       const imgEl = e.target.closest("[data-card-img]");
       if (!imgEl) return;
+      if (imgEl.closest("[data-no-preview]")) return;
       const src = imgEl.dataset.cardImg;
       if (src) this.showPreview(src, imgEl.getBoundingClientRect());
     };
@@ -70,6 +71,11 @@ const DragDrop = {
       const tag = document.activeElement && document.activeElement.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
+      if (e.key === "Escape") {
+        this.pushEvent("close_context_menu", {});
+        return;
+      }
+
       const key = e.key === " " ? "space" : e.key.toLowerCase();
       if (key === "space") e.preventDefault();
       const hovered = this.hoveredCard;
@@ -82,16 +88,25 @@ const DragDrop = {
       });
     };
 
+    const onDocMousedown = (e) => {
+      const menu = document.getElementById("context-menu");
+      if (menu && !menu.contains(e.target)) {
+        this.pushEvent("close_context_menu", {});
+      }
+    };
+
     this.el.addEventListener("mousedown", onMousedown);
     this.el.addEventListener("mouseover", onMouseover);
     this.el.addEventListener("mouseout", onMouseout);
     document.addEventListener("keydown", onKeydown);
+    document.addEventListener("mousedown", onDocMousedown);
 
     this._cleanup = () => {
       this.el.removeEventListener("mousedown", onMousedown);
       this.el.removeEventListener("mouseover", onMouseover);
       this.el.removeEventListener("mouseout", onMouseout);
       document.removeEventListener("keydown", onKeydown);
+      document.removeEventListener("mousedown", onDocMousedown);
     };
   },
 

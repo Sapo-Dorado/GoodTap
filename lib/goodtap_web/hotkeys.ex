@@ -3,6 +3,8 @@ defmodule GoodtapWeb.Hotkeys do
     tap: "space",
     move_to_graveyard: "d",
     move_to_exile: "s",
+    move_to_deck_top: "t",
+    move_to_deck_bottom: "y",
     flip_card: "f",
     draw: "1-9",
     shuffle: "v",
@@ -22,11 +24,11 @@ defmodule GoodtapWeb.Hotkeys do
   end
 
   def valid_actions_for("hand") do
-    [:move_to_graveyard, :move_to_exile, :flip_card]
+    [:move_to_graveyard, :move_to_exile, :move_to_deck_top, :move_to_deck_bottom, :flip_card]
   end
 
   def valid_actions_for("battlefield") do
-    [:tap, :move_to_graveyard, :move_to_exile, :flip_card, :add_counter, :copy_card]
+    [:tap, :move_to_graveyard, :move_to_exile, :move_to_deck_top, :move_to_deck_bottom, :flip_card, :add_counter, :copy_card]
   end
 
   def valid_actions_for("deck") do
@@ -38,11 +40,11 @@ defmodule GoodtapWeb.Hotkeys do
   end
 
   def valid_actions_for("graveyard") do
-    [:move_to_exile, :move_to_hand, :move_to_deck_top]
+    [:move_to_exile, :move_to_hand, :move_to_deck_top, :move_to_deck_bottom]
   end
 
   def valid_actions_for("exile") do
-    [:move_to_graveyard, :move_to_hand]
+    [:move_to_graveyard, :move_to_hand, :move_to_deck_top, :move_to_deck_bottom]
   end
 
   def valid_actions_for(_), do: []
@@ -52,6 +54,7 @@ defmodule GoodtapWeb.Hotkeys do
   def action_label(:move_to_exile), do: "Move to Exile"
   def action_label(:move_to_hand), do: "Move to Hand"
   def action_label(:move_to_deck_top), do: "Move to Top of Deck"
+  def action_label(:move_to_deck_bottom), do: "Move to Bottom of Deck"
   def action_label(:flip_card), do: "Flip Card"
   def action_label(:draw), do: "Draw"
   def action_label(:shuffle), do: "Shuffle"
