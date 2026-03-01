@@ -135,8 +135,11 @@ defmodule GoodtapWeb.GameLive do
       "w" ->
         {:noreply, assign(socket, token_search: true, token_query: "", token_results: [])}
 
-      "q" ->
+      "x" ->
         apply_action(socket, fn st, p -> Actions.untap_all(st, p) end)
+
+      "c" ->
+        apply_action(socket, fn st, p -> Actions.draw(st, p, 1) end)
 
       n when n in ["1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
         count = String.to_integer(n)

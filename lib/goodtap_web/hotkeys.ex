@@ -11,7 +11,8 @@ defmodule GoodtapWeb.Hotkeys do
     add_counter: "u",
     copy_card: "k",
     create_token: "w",
-    untap_all: "q"
+    untap_all: "x",
+    draw_one: "c"
   }
 
   def key_for(action), do: @hotkeys[action]
@@ -62,6 +63,8 @@ defmodule GoodtapWeb.Hotkeys do
   def action_label(:add_counter), do: "Add Counter"
   def action_label(:copy_card), do: "Copy Card"
   def action_label(:create_token), do: "Create Token"
+  def action_label(:untap_all), do: "Untap All"
+  def action_label(:draw_one), do: "Draw 1"
   def action_label(:find_card), do: "Find Card"
   def action_label(other), do: to_string(other)
 end
