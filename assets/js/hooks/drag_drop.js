@@ -274,7 +274,8 @@ const DragDrop = {
 
     this.draggedEl = card;
 
-    // Collect other selected cards on the battlefield for multi-drag
+    // Collect other selected cards on the battlefield for multi-drag.
+    // Also record their original % positions so we can reposition them optimistically.
     const isMulti = zone === "battlefield" && card.dataset.selected === "true";
     const otherSelected = isMulti
       ? Array.from(
@@ -282,7 +283,7 @@ const DragDrop = {
         ).filter(el => el.dataset.instanceId !== instanceId)
       : [];
 
-    // Per-card ghost state for multi-drag: { el, ghost, offsetX, offsetY }
+    // Per-card ghost state for multi-drag: { el, ghost, dxFromPrimary, dyFromPrimary, origXPct, origYPct }
     this.extraGhosts = [];
 
     const commitDrag = (e) => {
@@ -317,6 +318,9 @@ const DragDrop = {
         const dxFromPrimary = otherRect.left - rect.left;
         const dyFromPrimary = otherRect.top - rect.top;
         const otherTapped = otherEl.classList.contains("is-tapped");
+        // Record current % position from style (e.g. "12%" -> 0.12)
+        const origXPct = parseFloat(otherEl.style.left) / 100;
+        const origYPct = parseFloat(otherEl.style.top) / 100;
 
         const g = document.createElement("img");
         g.src = otherEl.dataset.cardImg || "";
@@ -334,7 +338,7 @@ const DragDrop = {
         `;
         document.body.appendChild(g);
         otherEl.style.display = "none";
-        this.extraGhosts.push({ el: otherEl, ghost: g, dxFromPrimary, dyFromPrimary });
+        this.extraGhosts.push({ el: otherEl, ghost: g, dxFromPrimary, dyFromPrimary, origXPct, origYPct });
       }
     };
 
@@ -386,6 +390,81 @@ const DragDrop = {
         const insertIndex = isListZone ? (this._insertIndex ?? null) : null;
         this._insertIndex = null;
         this.cleanupDragGhost();
+
+        // ── Optimistic rendering ──────────────────────────────────────────
+        //
+        // For same-zone moves we can immediately place the card at its
+        // destination so there is no gap between drop and server confirmation.
+        // We use the exact same values the server will compute, so when
+        // LiveView's morphdom patch arrives it finds the DOM already correct
+        // and makes no visible change.  If the server disagrees (error path)
+        // morphdom will snap-correct on the next render — acceptable.
+        //
+        // Cross-zone moves are left to the server: the card stays hidden until
+        // LiveView re-renders, because the destination element structure is
+        // different enough that building it in JS would be fragile.
+
+        if (isBattlefield && zone === "battlefield") {
+          // ── Battlefield reposition ──
+          // Server renders: left: trunc(x * 100)%; top: trunc(y * 100)%
+          // We must use the same trunc so morphdom sees an identical style string.
+          card.style.left = Math.trunc(relX * 100) + "%";
+          card.style.top = Math.trunc(relY * 100) + "%";
+          card.style.display = "";
+          this.draggedEl = null;
+
+          // Reposition other selected cards by the same delta
+          if (this.extraGhosts.length > 0) {
+            // rect was captured before display:none at commitDrag, so it holds the
+            // card's original on-screen position. Convert to fractional zone coords.
+            const origPrimaryXPct = (rect.left - zoneRect.left) / zoneRect.width;
+            const origPrimaryYPct = (rect.top - zoneRect.top) / zoneRect.height;
+            const dx = relX - origPrimaryXPct;
+            const dy = relY - origPrimaryYPct;
+
+            for (const { el, origXPct: ox, origYPct: oy } of this.extraGhosts) {
+              const nx = Math.max(0, Math.min(0.98, ox + dx));
+              const ny = Math.max(0, Math.min(0.98, oy + dy));
+              el.style.left = Math.trunc(nx * 100) + "%";
+              el.style.top = Math.trunc(ny * 100) + "%";
+              el.style.display = "";
+            }
+          }
+
+        } else if (isSameZone && isListZone) {
+          // ── List-zone reorder ──
+          // insertIndex is the desired position computed by showInsertGhost,
+          // matching the server's reorder_in_zone logic.
+          // Skip optimistic render if in "find" mode (cards sorted alphabetically —
+          // the visible index wouldn't match the actual deck position the server uses).
+          const isFind = !!dropInfo.el.parentElement?.querySelector('[name="query"]');
+
+          if (!isFind && insertIndex !== null) {
+            const innerEl = dropInfo.el.firstElementChild || dropInfo.el;
+            // All draggable siblings *including* the hidden dragged card
+            const allCards = Array.from(innerEl.querySelectorAll("[data-draggable]"));
+            const originalIndex = allCards.indexOf(card);
+            // Replicate the server's index adjustment: if original position is before
+            // the insert point, the insert point shifts left by one after removal.
+            const adjustedIndex = (originalIndex !== -1 && originalIndex < insertIndex)
+              ? insertIndex - 1
+              : insertIndex;
+
+            // Siblings without the dragged card
+            const siblings = allCards.filter(c => c !== card);
+            card.style.display = "";
+            if (adjustedIndex >= siblings.length) {
+              innerEl.appendChild(card);
+            } else {
+              innerEl.insertBefore(card, siblings[adjustedIndex]);
+            }
+            this.draggedEl = null;
+          }
+          // If isFind or insertIndex is null, fall through: draggedEl stays set,
+          // card remains hidden, server re-render will restore it.
+        }
+        // For cross-zone moves: card stays hidden; server re-render restores it.
+        // draggedEl remains set so cleanupDrag() can restore it if needed.
 
         // Collect selected instance ids for multi-card battlefield moves
         const selectedIds = [instanceId, ...this.extraGhosts.map(eg => eg.el.dataset.instanceId)];
