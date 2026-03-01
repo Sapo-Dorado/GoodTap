@@ -385,8 +385,8 @@ const DragDrop = {
         const zoneRect = dropInfo.el.getBoundingClientRect();
         const cardLeft = e.clientX - offsetX;
         const cardTop = e.clientY - offsetY;
-        const relX = Math.max(0, Math.min(0.98, (cardLeft - zoneRect.left) / zoneRect.width));
-        const relY = Math.max(0, Math.min(0.98, (cardTop - zoneRect.top) / zoneRect.height));
+        let relX = Math.max(0, Math.min(0.98, (cardLeft - zoneRect.left) / zoneRect.width));
+        let relY = Math.max(0, Math.min(0.98, (cardTop - zoneRect.top) / zoneRect.height));
 
         const insertIndex = isListZone ? (this._insertIndex ?? null) : null;
         this._insertIndex = null;
@@ -410,6 +410,7 @@ const DragDrop = {
           // ── Battlefield reposition ──
           // Server renders: left: trunc(x * 100)%; top: trunc(y * 100)%
           // We must use the same trunc so morphdom sees an identical style string.
+          ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId, zoneRect));
           card.style.left = Math.trunc(relX * 100) + "%";
           card.style.top = Math.trunc(relY * 100) + "%";
           card.style.display = "";
@@ -471,6 +472,7 @@ const DragDrop = {
           // any attribute differences in-place — no positional jump.
           const bf = document.getElementById("my-battlefield");
           if (bf) {
+            ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId, zoneRect));
             const el = document.createElement("div");
             el.id = `card-${instanceId}`;
             el.className = "card-on-battlefield absolute cursor-pointer transition-transform";
@@ -549,6 +551,43 @@ const DragDrop = {
 
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
+  },
+
+  // Shift relX right by 1% steps until the dropped card no longer significantly
+  // overlaps any other battlefield card, or placing it further right would clip it
+  // outside the battlefield. Two cards are considered overlapping when their positions
+  // are within NUDGE_THRESHOLD percent on both axes.
+  nudgeIfOccupied(relX, relY, excludeInstanceId, zoneRect) {
+    const NUDGE_THRESHOLD = 1; // percent — only nudge on near-exact overlaps
+    const NUDGE_STEP = 1;      // percent per step
+
+    // Stop before the card's right edge would leave the battlefield.
+    // zoneRect may be undefined (e.g. for cross-zone drops before layout); fall back to 94%.
+    const maxX = zoneRect
+      ? Math.floor((1 - CARD_W / zoneRect.width) * 100)
+      : 94;
+
+    const cards = Array.from(
+      document.querySelectorAll(`[data-draggable][data-zone="battlefield"][data-owner="${this.myRole}"]`)
+    ).filter(el => el.dataset.instanceId !== excludeInstanceId && el.style.display !== "none");
+
+    const positions = cards.map(el => ({
+      x: Math.trunc(parseFloat(el.style.left)),
+      y: Math.trunc(parseFloat(el.style.top)),
+    }));
+
+    const ty = Math.trunc(relY * 100);
+    let tx = Math.trunc(relX * 100);
+
+    const overlaps = (cx) => positions.some(p =>
+      Math.abs(p.x - cx) < NUDGE_THRESHOLD && Math.abs(p.y - ty) < NUDGE_THRESHOLD
+    );
+
+    while (overlaps(tx) && tx < maxX) {
+      tx += NUDGE_STEP;
+    }
+
+    return { relX: tx / 100, relY };
   },
 
   updateGhostPos(x, y, offsetX, offsetY) {

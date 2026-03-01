@@ -111,19 +111,21 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_battlefield(state, player, instance_id, source_zone, x, y) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
+      {fx, fy} = nudge_if_occupied(state, player, x, y, nil)
       card =
         card
         |> Map.put("tapped", false)
-        |> Map.put("x", x)
-        |> Map.put("y", y)
+        |> Map.put("x", fx)
+        |> Map.put("y", fy)
 
       {:ok, append_to_zone(state, player, "battlefield", card)}
     end
   end
 
   def update_battlefield_position(state, player, instance_id, x, y) do
+    {fx, fy} = nudge_if_occupied(state, player, x, y, instance_id)
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
-      card |> Map.put("x", x) |> Map.put("y", y)
+      card |> Map.put("x", fx) |> Map.put("y", fy)
     end)
   end
 
@@ -148,12 +150,13 @@ defmodule Goodtap.GameEngine.Actions do
     case get_in(state, [player, "zones", "deck"]) do
       [] -> {:ok, state}
       [card | rest] ->
+        {fx, _} = nudge_if_occupied(state, player, x, y, nil)
         card =
           card
           |> Map.put("tapped", false)
           |> Map.put("is_face_down", true)
           |> Map.put("known", false)
-          |> Map.put("x", x)
+          |> Map.put("x", fx)
           |> Map.put("y", y)
 
         state =
@@ -301,12 +304,13 @@ defmodule Goodtap.GameEngine.Actions do
         {:error, "Card not found on battlefield"}
 
       original ->
+        {fx, _} = nudge_if_occupied(state, player, original["x"], original["y"], nil)
         token =
           original
           |> Map.put("instance_id", Ecto.UUID.generate())
           |> Map.put("is_token", true)
-          |> Map.put("x", min(original["x"] + 0.05, 0.95))
-          |> Map.put("y", min(original["y"] + 0.05, 0.95))
+          |> Map.put("x", fx)
+          |> Map.put("y", original["y"])
 
         {:ok, append_to_zone(state, player, "battlefield", token)}
     end
@@ -373,6 +377,33 @@ defmodule Goodtap.GameEngine.Actions do
   end
 
   # ─── Private Helpers ─────────────────────────────────────────────────────
+
+  # Nudge x right by 1% steps until the card no longer significantly overlaps any
+  # other battlefield card, or placing it further right would clip it outside the
+  # battlefield. Two cards are considered overlapping when their positions are within
+  # @nudge_threshold percent on both axes. The stop boundary of 94% leaves enough
+  # room for the card (~56px) to be fully visible at typical battlefield widths.
+  # Pass exclude_instance_id to ignore the card being moved.
+  @nudge_threshold 1
+  @nudge_step 1
+  @nudge_max_x 94
+  defp nudge_if_occupied(state, player, x, y, exclude_instance_id) do
+    bf = get_in(state, [player, "zones", "battlefield"]) || []
+    positions =
+      bf
+      |> Enum.reject(fn c -> exclude_instance_id != nil and c["instance_id"] == exclude_instance_id end)
+      |> Enum.map(fn c -> {trunc((c["x"] || 0) * 100), trunc((c["y"] || 0) * 100)} end)
+    ty = trunc(y * 100)
+    overlaps? = fn cx ->
+      Enum.any?(positions, fn {px, py} ->
+        abs(px - cx) < @nudge_threshold and abs(py - ty) < @nudge_threshold
+      end)
+    end
+    tx =
+      Stream.iterate(trunc(x * 100), &(&1 + @nudge_step))
+      |> Enum.find(fn cx -> cx >= @nudge_max_x or not overlaps?.(cx) end)
+    {tx / 100, y}
+  end
 
   defp find_in_zone(state, player, zone, instance_id) do
     cards = get_in(state, [player, "zones", zone]) || []
