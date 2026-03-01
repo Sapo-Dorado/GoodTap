@@ -175,6 +175,9 @@ defmodule GoodtapWeb.GameLive do
           "x" ->
             apply_action(socket, fn st, p -> Actions.untap_all(st, p) end)
 
+          "p" when zone in ["deck", "deck_top"] ->
+            apply_action(socket, fn st, p -> Actions.draw_face_down(st, p) end)
+
           "c" ->
             apply_action(socket, fn st, p -> Actions.draw(st, p, 1) end)
 
@@ -235,6 +238,12 @@ defmodule GoodtapWeb.GameLive do
   def handle_event("action", %{"type" => "copy_card", "instance_id" => id}, socket) do
     apply_action(socket, fn state, player ->
       Actions.copy_card(state, player, id)
+    end)
+  end
+
+  def handle_event("action", %{"type" => "draw_face_down"}, socket) do
+    apply_action(socket, fn state, player ->
+      Actions.draw_face_down(state, player)
     end)
   end
 

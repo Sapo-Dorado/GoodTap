@@ -134,9 +134,35 @@ defmodule Goodtap.GameEngine.Actions do
       if card["is_double_faced"] do
         Map.update!(card, "active_face", fn f -> if f == 0, do: 1, else: 0 end)
       else
-        Map.update!(card, "is_face_down", &(!&1))
+        currently_face_down = card["is_face_down"]
+        card = Map.update!(card, "is_face_down", &(!&1))
+        # Revealing a face-down card marks it as known to the owner
+        if currently_face_down, do: Map.put(card, "known", true), else: card
       end
     end)
+  end
+
+  # ─── Draw Face-Down to Battlefield ────────────────────────────────────────
+
+  def draw_face_down(state, player, x \\ 0.5, y \\ 0.5) do
+    case get_in(state, [player, "zones", "deck"]) do
+      [] -> {:ok, state}
+      [card | rest] ->
+        card =
+          card
+          |> Map.put("tapped", false)
+          |> Map.put("is_face_down", true)
+          |> Map.put("known", false)
+          |> Map.put("x", x)
+          |> Map.put("y", y)
+
+        state =
+          state
+          |> put_in([player, "zones", "deck"], rest)
+          |> update_in([player, "zones", "battlefield"], &(&1 ++ [card]))
+
+        {:ok, state}
+    end
   end
 
   # ─── Draw ─────────────────────────────────────────────────────────────────
