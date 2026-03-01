@@ -14,16 +14,38 @@ const DragDrop = {
     this.hoveredCard = null;
     this.insertGhost = null;
     this._insertIndex = null;
+    this.lasso = null;
+    this.lassoEl = null;
     this.myRole = this.el.dataset.myRole;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
 
     const onMousedown = (e) => {
       if (e.target.closest("[data-no-hotkey]")) return;
-      const card = e.target.closest("[data-draggable]");
-      if (!card) return;
       if (e.button !== 0) return;
+
+      const card = e.target.closest("[data-draggable]");
+
+      // Click not on a card — check if on battlefield for lasso
+      if (!card) {
+        const bf = e.target.closest("#my-battlefield");
+        if (bf && !e.target.closest("[data-pile-zone]")) {
+          this.pushEvent("clear_selection", {});
+          this.startLasso(bf, e);
+        } else {
+          this.pushEvent("clear_selection", {});
+        }
+        return;
+      }
+
+      // Click on opponent's card — ignore
       if (card.dataset.owner && card.dataset.owner !== this.myRole) return;
+
+      // Click on unselected card — clear selection first
+      if (card.dataset.selected !== "true") {
+        this.pushEvent("clear_selection", {});
+      }
+
       this.hidePreview();
       this.startDrag(card, e);
     };
@@ -113,6 +135,7 @@ const DragDrop = {
   destroyed() {
     if (this._cleanup) this._cleanup();
     this.cleanupDrag();
+    this.cleanupLasso();
     this.hidePreview();
   },
 
@@ -141,6 +164,99 @@ const DragDrop = {
     this.previewPanel.style.display = "none";
   },
 
+  // ─── Lasso Selection ──────────────────────────────────────────────────────
+
+  startLasso(bf, event) {
+    const bfRect = bf.getBoundingClientRect();
+    const startX = event.clientX - bfRect.left;
+    const startY = event.clientY - bfRect.top;
+    let lassoCommitted = false;
+
+    const lassoEl = document.createElement("div");
+    lassoEl.style.cssText = `
+      position: absolute;
+      border: 1px dashed rgba(96, 165, 250, 0.8);
+      background: rgba(96, 165, 250, 0.1);
+      pointer-events: none;
+      z-index: 50;
+      left: ${startX}px;
+      top: ${startY}px;
+      width: 0;
+      height: 0;
+    `;
+    this.lassoEl = lassoEl;
+
+    const onMove = (e) => {
+      const curX = e.clientX - bfRect.left;
+      const curY = e.clientY - bfRect.top;
+      const x = Math.min(startX, curX);
+      const y = Math.min(startY, curY);
+      const w = Math.abs(curX - startX);
+      const h = Math.abs(curY - startY);
+
+      if (!lassoCommitted && (w > 4 || h > 4)) {
+        lassoCommitted = true;
+        bf.appendChild(lassoEl);
+      }
+
+      if (lassoCommitted) {
+        lassoEl.style.left = x + "px";
+        lassoEl.style.top = y + "px";
+        lassoEl.style.width = w + "px";
+        lassoEl.style.height = h + "px";
+      }
+    };
+
+    const onUp = (e) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+
+      if (!lassoCommitted) {
+        this.cleanupLasso();
+        return;
+      }
+
+      // Find the lasso rect in viewport coords
+      const lassoRect = lassoEl.getBoundingClientRect();
+
+      // Find all my battlefield cards that overlap (even partially) with the lasso
+      const cards = Array.from(
+        document.querySelectorAll(`[data-draggable][data-zone="battlefield"][data-owner="${this.myRole}"]`)
+      );
+
+      const selected = cards
+        .filter(card => {
+          const r = card.getBoundingClientRect();
+          return (
+            r.left < lassoRect.right &&
+            r.right > lassoRect.left &&
+            r.top < lassoRect.bottom &&
+            r.bottom > lassoRect.top
+          );
+        })
+        .map(card => card.dataset.instanceId);
+
+      this.cleanupLasso();
+
+      if (selected.length > 0) {
+        this.pushEvent("set_selection", { instance_ids: selected });
+      }
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  },
+
+  cleanupLasso() {
+    if (this.lassoEl) {
+      this.lassoEl.remove();
+      this.lassoEl = null;
+    }
+    this.lasso = null;
+  },
+
+  // ─── Drag ─────────────────────────────────────────────────────────────────
+
   startDrag(card, event) {
     const instanceId = card.dataset.instanceId;
     const zone = card.dataset.zone;
@@ -158,14 +274,25 @@ const DragDrop = {
 
     this.draggedEl = card;
 
+    // Collect other selected cards on the battlefield for multi-drag
+    const isMulti = zone === "battlefield" && card.dataset.selected === "true";
+    const otherSelected = isMulti
+      ? Array.from(
+          document.querySelectorAll(`[data-selected="true"][data-zone="battlefield"][data-owner="${this.myRole}"]`)
+        ).filter(el => el.dataset.instanceId !== instanceId)
+      : [];
+
+    // Per-card ghost state for multi-drag: { el, ghost, offsetX, offsetY }
+    this.extraGhosts = [];
+
     const commitDrag = (e) => {
       if (dragCommitted) return;
       dragCommitted = true;
 
-      // Hide original and collapse its space in the layout
+      // Hide primary card
       card.style.display = "none";
 
-      // Ghost
+      // Primary ghost
       this.ghost = document.createElement("img");
       this.ghost.src = imgSrc || "";
       this.ghost.style.cssText = `
@@ -183,6 +310,32 @@ const DragDrop = {
       document.body.appendChild(this.ghost);
       this.dragging = { instanceId, zone, owner, offsetX, offsetY };
       this.updateGhostPos(e.clientX, e.clientY, offsetX, offsetY);
+
+      // Extra ghosts for other selected cards — positioned relative to primary
+      for (const otherEl of otherSelected) {
+        const otherRect = otherEl.getBoundingClientRect();
+        const dxFromPrimary = otherRect.left - rect.left;
+        const dyFromPrimary = otherRect.top - rect.top;
+        const otherTapped = otherEl.classList.contains("is-tapped");
+
+        const g = document.createElement("img");
+        g.src = otherEl.dataset.cardImg || "";
+        g.style.cssText = `
+          position: fixed;
+          pointer-events: none;
+          opacity: 0.9;
+          z-index: 9998;
+          width: ${CARD_W}px;
+          height: ${CARD_H}px;
+          object-fit: cover;
+          border-radius: 4px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+          ${otherTapped ? "transform: rotate(90deg); transform-origin: center center;" : ""}
+        `;
+        document.body.appendChild(g);
+        otherEl.style.display = "none";
+        this.extraGhosts.push({ el: otherEl, ghost: g, dxFromPrimary, dyFromPrimary });
+      }
     };
 
     const onMove = (e) => {
@@ -193,6 +346,13 @@ const DragDrop = {
       }
       if (!dragCommitted) return;
       this.updateGhostPos(e.clientX, e.clientY, offsetX, offsetY);
+      // Move extra ghosts in parallel
+      const primaryLeft = e.clientX - offsetX;
+      const primaryTop = e.clientY - offsetY;
+      for (const { ghost, dxFromPrimary, dyFromPrimary } of this.extraGhosts) {
+        ghost.style.left = (primaryLeft + dxFromPrimary) + "px";
+        ghost.style.top = (primaryTop + dyFromPrimary) + "px";
+      }
       this.updateDropZoneIndicator(e.clientX, e.clientY, zone);
     };
 
@@ -227,6 +387,9 @@ const DragDrop = {
         this._insertIndex = null;
         this.cleanupDragGhost();
 
+        // Collect selected instance ids for multi-card battlefield moves
+        const selectedIds = [instanceId, ...this.extraGhosts.map(eg => eg.el.dataset.instanceId)];
+
         this.pushEvent("drag_end", {
           instance_id: instanceId,
           from_zone: zone,
@@ -234,7 +397,8 @@ const DragDrop = {
           target_zone: dropInfo.zone,
           x: relX,
           y: relY,
-          insert_index: insertIndex
+          insert_index: insertIndex,
+          selected_instance_ids: selectedIds.length > 1 ? selectedIds : []
         });
       } else {
         // No valid drop zone or dropped on same non-list zone — restore
@@ -243,7 +407,11 @@ const DragDrop = {
         if (draggedEl) {
           draggedEl.style.display = "";
         }
+        for (const { el } of this.extraGhosts) {
+          el.style.display = "";
+        }
       }
+      this.extraGhosts = [];
     };
 
     document.addEventListener("mousemove", onMove);
@@ -366,6 +534,9 @@ const DragDrop = {
     if (this.insertGhost) {
       this.insertGhost.remove();
       this.insertGhost = null;
+    }
+    for (const { ghost } of (this.extraGhosts || [])) {
+      ghost.remove();
     }
     // draggedEl intentionally left for the caller to handle
   },

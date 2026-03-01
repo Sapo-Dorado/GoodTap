@@ -52,7 +52,8 @@ const Battlefield = {
         return;
       }
 
-      // Right-click on empty battlefield -> token search
+      // Right-click on empty battlefield -> clear selection + token search
+      this.pushEvent("clear_selection", {});
       const rect = this.el.getBoundingClientRect();
       const relX = Math.round(((e.clientX - rect.left) / rect.width) * 100) / 100;
       const relY = Math.round(((e.clientY - rect.top) / rect.height) * 100) / 100;

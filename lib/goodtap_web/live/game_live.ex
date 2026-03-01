@@ -42,7 +42,9 @@ defmodule GoodtapWeb.GameLive do
          adding_counter_to: nil,
          counter_name_input: "",
          # End game
-         end_game_modal: false
+         end_game_modal: false,
+         # Multi-card selection
+         selected_cards: MapSet.new()
        )}
     end
   end
@@ -92,6 +94,16 @@ defmodule GoodtapWeb.GameLive do
     {:noreply, assign(socket, context_menu: nil)}
   end
 
+  # ─── Multi-Card Selection ─────────────────────────────────────────────────
+
+  def handle_event("clear_selection", _params, socket) do
+    {:noreply, assign(socket, selected_cards: MapSet.new())}
+  end
+
+  def handle_event("set_selection", %{"instance_ids" => ids}, socket) do
+    {:noreply, assign(socket, selected_cards: MapSet.new(ids))}
+  end
+
   def handle_event("adjust_scry_count", %{"delta" => delta}, socket) do
     case socket.assigns.context_menu do
       nil -> {:noreply, socket}
@@ -104,49 +116,74 @@ defmodule GoodtapWeb.GameLive do
   # ─── Keyboard Shortcuts ───────────────────────────────────────────────────
 
   def handle_event("hotkey", %{"key" => key, "instance_id" => id, "zone" => zone}, socket) do
-    case key do
-      "d" when not is_nil(id) ->
-        apply_action(socket, fn st, p -> Actions.move_to_graveyard(st, p, id, zone) end)
+    selected = socket.assigns.selected_cards
+    has_selection = not MapSet.equal?(selected, MapSet.new())
 
-      "s" when not is_nil(id) ->
-        apply_action(socket, fn st, p -> Actions.move_to_exile(st, p, id, zone) end)
+    # Selection takes full precedence for card-level keys: fire even with no hovered card
+    cond do
+      has_selection and key == "d" ->
+        apply_to_selection(socket, fn st, p, sid -> Actions.move_to_graveyard(st, p, sid, "battlefield") end)
 
-      "f" when not is_nil(id) ->
-        apply_action(socket, fn st, p -> Actions.flip_card(st, p, id, zone) end)
+      has_selection and key == "s" ->
+        apply_to_selection(socket, fn st, p, sid -> Actions.move_to_exile(st, p, sid, "battlefield") end)
 
-      "space" when not is_nil(id) ->
-        apply_action(socket, fn st, p -> Actions.tap(st, p, id) end)
+      has_selection and key == "f" ->
+        apply_to_selection(socket, fn st, p, sid -> Actions.flip_card(st, p, sid, "battlefield") end)
 
-      "v" ->
-        apply_action(socket, fn st, p -> Actions.shuffle(st, p) end)
+      has_selection and key == "space" ->
+        apply_to_selection(socket, fn st, p, sid -> Actions.tap(st, p, sid) end)
 
-      "u" when not is_nil(id) ->
-        {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
+      has_selection and key == "t" ->
+        apply_to_selection(socket, fn st, p, sid -> Actions.move_to_deck(st, p, sid, "battlefield") end)
 
-      "t" when not is_nil(id) ->
-        apply_action(socket, fn st, p -> Actions.move_to_deck(st, p, id, zone) end)
+      has_selection and key == "y" ->
+        apply_to_selection(socket, fn st, p, sid -> Actions.move_to_deck_bottom(st, p, sid, "battlefield") end)
 
-      "y" when not is_nil(id) ->
-        apply_action(socket, fn st, p -> Actions.move_to_deck_bottom(st, p, id, zone) end)
+      true ->
+        case key do
+          "d" when not is_nil(id) ->
+            apply_action(socket, fn st, p -> Actions.move_to_graveyard(st, p, id, zone) end)
 
-      "k" when not is_nil(id) ->
-        apply_action(socket, fn st, p -> Actions.copy_card(st, p, id) end)
+          "s" when not is_nil(id) ->
+            apply_action(socket, fn st, p -> Actions.move_to_exile(st, p, id, zone) end)
 
-      "w" ->
-        {:noreply, assign(socket, token_search: true, token_query: "", token_results: [])}
+          "f" when not is_nil(id) ->
+            apply_action(socket, fn st, p -> Actions.flip_card(st, p, id, zone) end)
 
-      "x" ->
-        apply_action(socket, fn st, p -> Actions.untap_all(st, p) end)
+          "space" when not is_nil(id) ->
+            apply_action(socket, fn st, p -> Actions.tap(st, p, id) end)
 
-      "c" ->
-        apply_action(socket, fn st, p -> Actions.draw(st, p, 1) end)
+          "t" when not is_nil(id) ->
+            apply_action(socket, fn st, p -> Actions.move_to_deck(st, p, id, zone) end)
 
-      n when n in ["1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
-        count = String.to_integer(n)
-        apply_action(socket, fn st, p -> Actions.draw(st, p, count) end)
+          "y" when not is_nil(id) ->
+            apply_action(socket, fn st, p -> Actions.move_to_deck_bottom(st, p, id, zone) end)
 
-      _ ->
-        {:noreply, socket}
+          "v" ->
+            apply_action(socket, fn st, p -> Actions.shuffle(st, p) end)
+
+          "u" when not is_nil(id) ->
+            {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
+
+          "k" when not is_nil(id) ->
+            apply_action(socket, fn st, p -> Actions.copy_card(st, p, id) end)
+
+          "w" ->
+            {:noreply, assign(socket, token_search: true, token_query: "", token_results: [])}
+
+          "x" ->
+            apply_action(socket, fn st, p -> Actions.untap_all(st, p) end)
+
+          "c" ->
+            apply_action(socket, fn st, p -> Actions.draw(st, p, 1) end)
+
+          n when n in ["1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
+            count = String.to_integer(n)
+            apply_action(socket, fn st, p -> Actions.draw(st, p, count) end)
+
+          _ ->
+            {:noreply, socket}
+        end
     end
   end
 
@@ -307,6 +344,7 @@ defmodule GoodtapWeb.GameLive do
     x = params["x"] || 0.1
     y = params["y"] || 0.5
     owner = params["owner"] || socket.assigns.my_role
+    selected_ids = params["selected_instance_ids"] || []
 
     # Only allow moving your own cards
     if owner != socket.assigns.my_role do
@@ -321,9 +359,32 @@ defmodule GoodtapWeb.GameLive do
         case {from_zone, target_zone} do
           # Battlefield reposition (same zone)
           {"battlefield", "battlefield"} ->
-            apply_action_inline(socket, fn state, player ->
-              Actions.update_battlefield_position(state, player, instance_id, x, y)
-            end)
+            is_multi = length(selected_ids) > 1 and Enum.member?(selected_ids, instance_id)
+            if is_multi do
+              # Move all selected cards by the same delta as the dragged card
+              apply_action_inline(socket, fn state, player ->
+                bf_cards = get_in(state, [player, "zones", "battlefield"]) || []
+                dragged = Enum.find(bf_cards, &(&1["instance_id"] == instance_id))
+                dx = x - (dragged["x"] || 0.1)
+                dy = y - (dragged["y"] || 0.5)
+                Enum.reduce(selected_ids, {:ok, state}, fn sid, {:ok, st} ->
+                  card = Enum.find(get_in(st, [player, "zones", "battlefield"]) || [], &(&1["instance_id"] == sid))
+                  if card do
+                    nx = max(0.0, min(0.98, (card["x"] || 0.1) + dx))
+                    ny = max(0.0, min(0.98, (card["y"] || 0.5) + dy))
+                    Actions.update_battlefield_position(st, player, sid, nx, ny)
+                  else
+                    {:ok, st}
+                  end
+                end)
+                |> elem(1)
+                |> then(&{:ok, &1})
+              end)
+            else
+              apply_action_inline(socket, fn state, player ->
+                Actions.update_battlefield_position(state, player, instance_id, x, y)
+              end)
+            end
 
           # Same list-zone reorder
           {zone, zone} when zone in ["hand", "deck", "graveyard", "exile"] ->
@@ -535,6 +596,24 @@ defmodule GoodtapWeb.GameLive do
   end
 
 
+  defp apply_to_selection(socket, action_fn) do
+    ids = MapSet.to_list(socket.assigns.selected_cards)
+    socket = assign(socket, context_menu: nil)
+    state = socket.assigns.game_state
+    player = socket.assigns.my_role
+
+    new_state =
+      Enum.reduce(ids, state, fn id, st ->
+        case action_fn.(st, player, id) do
+          {:ok, updated} -> updated
+          {:error, _} -> st
+        end
+      end)
+
+    socket = persist_and_broadcast(socket, new_state)
+    {:noreply, socket}
+  end
+
   defp persist_and_broadcast(socket, new_state) do
     game = socket.assigns.game
     {:ok, _} = Games.update_game_state(game, new_state)
@@ -664,6 +743,7 @@ defmodule GoodtapWeb.GameLive do
               class={[
                 "card-on-battlefield absolute cursor-pointer transition-transform",
                 if(card["tapped"], do: "is-tapped", else: ""),
+                if(MapSet.member?(@selected_cards, card["instance_id"]), do: "is-selected", else: ""),
               ]}
               style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
               data-draggable="true"
@@ -671,6 +751,7 @@ defmodule GoodtapWeb.GameLive do
               data-zone="battlefield"
               data-owner={@my_role}
               data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
+              data-selected={if MapSet.member?(@selected_cards, card["instance_id"]), do: "true", else: "false"}
             >
               <div class="flex flex-col items-center">
                 <%!-- Card image with hover highlight --%>
