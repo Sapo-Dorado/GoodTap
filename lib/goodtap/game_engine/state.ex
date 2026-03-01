@@ -110,7 +110,7 @@ defmodule Goodtap.GameEngine.State do
       hidden_from_viewer?(viewer_role, owner_role, zone) ->
         card_back_url()
 
-      zone == "deck" and not card_instance["known"] ->
+      zone == "deck" and card_instance["known"] != true ->
         card_back_url()
 
       card_instance["is_face_down"] ->

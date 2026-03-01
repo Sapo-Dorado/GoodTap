@@ -79,14 +79,18 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Move to Deck Top ────────────────────────────────────────────────────
 
-  def move_to_deck_top(state, player, instance_id, source_zone) do
+  def move_to_deck(state, player, instance_id, source_zone, insert_index \\ nil) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_from(source_zone)
 
       if card["is_token"] do
         {:ok, state}
       else
-        {:ok, prepend_to_zone(state, player, "deck", card)}
+        if is_integer(insert_index) do
+          {:ok, insert_into_zone(state, player, "deck", card, insert_index)}
+        else
+          {:ok, prepend_to_zone(state, player, "deck", card)}
+        end
       end
     end
   end

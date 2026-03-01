@@ -169,7 +169,7 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_event("action", %{"type" => "move_to_deck_top", "instance_id" => id, "zone" => zone}, socket) do
     apply_action(socket, fn state, player ->
-      Actions.move_to_deck_top(state, player, id, zone)
+      Actions.move_to_deck(state, player, id, zone)
     end)
   end
 
@@ -340,7 +340,7 @@ defmodule GoodtapWeb.GameLive do
 
           {_, "deck"} ->
             apply_action_inline(socket, fn state, player ->
-              Actions.move_to_deck_top(state, player, instance_id, from_zone)
+              Actions.move_to_deck(state, player, instance_id, from_zone, insert_index)
             end)
 
           _ ->
