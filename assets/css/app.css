@@ -139,7 +139,7 @@
 
 /* transform-origin: top left so left/top % positions map to card top-left corner */
 .card-on-battlefield {
-  transform-origin: top left;
+  transform-origin: center center;
 }
 
 .card-draggable {
