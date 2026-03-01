@@ -549,50 +549,50 @@ defmodule GoodtapWeb.GameLive do
       phx-hook="DragDrop"
       data-my-role={@my_role}
     >
-      <%!-- Opponent Area (top half) --%>
-      <div class="flex-[2] flex flex-col min-h-0">
-        <%!-- Opponent Info Bar --%>
-        <div class="flex items-center gap-4 px-4 py-2 bg-gray-900 border-b border-gray-700 shrink-0">
-          <span class="font-bold text-sm">{@opp["username"] || "Opponent"}</span>
-          <div class="flex items-center gap-1 text-sm">
-            <span class="text-red-400">♥</span>
-            <span class="font-mono font-bold">{@opp["life"] || 20}</span>
-          </div>
-          <%= for {tracker, idx} <- Enum.with_index(@opp["trackers"] || []) do %>
-            <div class="flex items-center gap-1 text-xs bg-gray-700 rounded px-2 py-1">
-              <span>{tracker["name"]}</span>
-              <span class="font-mono font-bold">{tracker["value"]}</span>
-            </div>
-          <% end %>
-          <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
-            <span>Hand: {length(zone_cards(@opp, "hand"))}</span>
-            <button
-              phx-click="open_zone"
-              phx-value-zone="deck"
-              phx-value-owner={@opp_role}
-              class="hover:text-white"
-            >
-              Deck: {length(zone_cards(@opp, "deck"))}
-            </button>
-            <button
-              phx-click="open_zone"
-              phx-value-zone="graveyard"
-              phx-value-owner={@opp_role}
-              class="hover:text-white"
-            >
-              GY: {length(zone_cards(@opp, "graveyard"))}
-            </button>
-            <button
-              phx-click="open_zone"
-              phx-value-zone="exile"
-              phx-value-owner={@opp_role}
-              class="hover:text-white"
-            >
-              EX: {length(zone_cards(@opp, "exile"))}
-            </button>
-          </div>
+      <%!-- Opponent Info Bar --%>
+      <div class="flex items-center gap-4 px-4 py-2 bg-gray-900 border-b border-gray-700 shrink-0">
+        <span class="font-bold text-sm">{@opp["username"] || "Opponent"}</span>
+        <div class="flex items-center gap-1 text-sm">
+          <span class="text-red-400">♥</span>
+          <span class="font-mono font-bold">{@opp["life"] || 20}</span>
         </div>
+        <%= for {tracker, idx} <- Enum.with_index(@opp["trackers"] || []) do %>
+          <div class="flex items-center gap-1 text-xs bg-gray-700 rounded px-2 py-1">
+            <span>{tracker["name"]}</span>
+            <span class="font-mono font-bold">{tracker["value"]}</span>
+          </div>
+        <% end %>
+        <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+          <span>Hand: {length(zone_cards(@opp, "hand"))}</span>
+          <button
+            phx-click="open_zone"
+            phx-value-zone="deck"
+            phx-value-owner={@opp_role}
+            class="hover:text-white"
+          >
+            Deck: {length(zone_cards(@opp, "deck"))}
+          </button>
+          <button
+            phx-click="open_zone"
+            phx-value-zone="graveyard"
+            phx-value-owner={@opp_role}
+            class="hover:text-white"
+          >
+            GY: {length(zone_cards(@opp, "graveyard"))}
+          </button>
+          <button
+            phx-click="open_zone"
+            phx-value-zone="exile"
+            phx-value-owner={@opp_role}
+            class="hover:text-white"
+          >
+            EX: {length(zone_cards(@opp, "exile"))}
+          </button>
+        </div>
+      </div>
 
+      <%!-- Battlefields — flex-1 shared area, split equally --%>
+      <div class="flex-1 flex flex-col min-h-0">
         <%!-- Opponent Battlefield (rotated 180° so their near edge faces them) --%>
         <div
           id="opp-battlefield"
@@ -631,10 +631,7 @@ defmodule GoodtapWeb.GameLive do
             </div>
           <% end %>
         </div>
-      </div>
 
-      <%!-- My Area (bottom half) --%>
-      <div class="flex-[2] flex flex-col min-h-0">
         <%!-- My Battlefield --%>
         <div
           id="my-battlefield"
@@ -844,9 +841,10 @@ defmodule GoodtapWeb.GameLive do
             <% end %>
           </div>
         </div>
+      </div>
 
-        <%!-- My Info Bar --%>
-        <div class="flex items-center gap-4 px-4 py-2 bg-gray-900 border-t border-gray-700 shrink-0">
+      <%!-- My Info Bar --%>
+      <div class="flex items-center gap-4 px-4 py-2 bg-gray-900 border-t border-gray-700 shrink-0">
           <%!-- Life Total --%>
           <div class="flex items-center gap-1">
             <span class="text-red-400 font-bold">♥</span>
@@ -981,7 +979,6 @@ defmodule GoodtapWeb.GameLive do
             </div>
           </div>
         </div>
-      </div>
 
       <%!-- Card Preview Panel (shown on hover via JS, hidden during drag) --%>
       <div
