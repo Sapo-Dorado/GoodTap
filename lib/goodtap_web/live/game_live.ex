@@ -392,30 +392,50 @@ defmodule GoodtapWeb.GameLive do
               Actions.reorder_in_zone(state, player, zone, instance_id, insert_index || 0)
             end)
 
-          # Cross-zone moves
+          # Cross-zone moves — apply to all selected cards if multi
           {_, "battlefield"} ->
+            all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
-              Actions.move_to_battlefield(state, player, instance_id, from_zone, x, y)
+              Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
+                src = find_card_zone(st, player, sid) || from_zone
+                Actions.move_to_battlefield(st, player, sid, src, x, y)
+              end) |> elem(1) |> then(&{:ok, &1})
             end)
 
           {_, "graveyard"} ->
+            all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
-              Actions.move_to_graveyard(state, player, instance_id, from_zone)
+              Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
+                src = find_card_zone(st, player, sid) || from_zone
+                Actions.move_to_graveyard(st, player, sid, src)
+              end) |> elem(1) |> then(&{:ok, &1})
             end)
 
           {_, "exile"} ->
+            all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
-              Actions.move_to_exile(state, player, instance_id, from_zone)
+              Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
+                src = find_card_zone(st, player, sid) || from_zone
+                Actions.move_to_exile(st, player, sid, src)
+              end) |> elem(1) |> then(&{:ok, &1})
             end)
 
           {_, "hand"} ->
+            all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
-              Actions.move_to_hand(state, player, instance_id, from_zone, insert_index)
+              Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
+                src = find_card_zone(st, player, sid) || from_zone
+                Actions.move_to_hand(st, player, sid, src, nil)
+              end) |> elem(1) |> then(&{:ok, &1})
             end)
 
           {_, "deck"} ->
+            all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
-              Actions.move_to_deck(state, player, instance_id, from_zone, insert_index)
+              Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
+                src = find_card_zone(st, player, sid) || from_zone
+                Actions.move_to_deck(st, player, sid, src, nil)
+              end) |> elem(1) |> then(&{:ok, &1})
             end)
 
           _ ->
@@ -595,6 +615,15 @@ defmodule GoodtapWeb.GameLive do
     end
   end
 
+
+  # Find which zone a card currently lives in (searches all zones for the player)
+  defp find_card_zone(state, player, instance_id) do
+    zones = ["hand", "battlefield", "graveyard", "exile", "deck"]
+    Enum.find_value(zones, fn zone ->
+      cards = get_in(state, [player, "zones", zone]) || []
+      if Enum.any?(cards, &(&1["instance_id"] == instance_id)), do: zone
+    end)
+  end
 
   defp apply_to_selection(socket, action_fn) do
     ids = MapSet.to_list(socket.assigns.selected_cards)
