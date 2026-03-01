@@ -559,6 +559,7 @@ defmodule GoodtapWeb.GameLive do
             </div>
           <% end %>
           <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+            <span>Hand: {length(zone_cards(@opp, "hand"))}</span>
             <button
               phx-click="open_zone"
               phx-value-zone="deck"
@@ -892,6 +893,7 @@ defmodule GoodtapWeb.GameLive do
           </form>
 
           <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
+            <span>Hand: {length(zone_cards(@my, "hand"))}</span>
             <button phx-click="show_end_game" class="text-red-400 hover:text-red-300">
               End Game
             </button>
