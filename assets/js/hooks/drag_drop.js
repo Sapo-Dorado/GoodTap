@@ -131,9 +131,8 @@ const DragDrop = {
       if (dragCommitted) return;
       dragCommitted = true;
 
-      // Hide original
-      card.style.opacity = "0";
-      card.style.pointerEvents = "none";
+      // Hide original and collapse its space in the layout
+      card.style.display = "none";
 
       // Ghost
       this.ghost = document.createElement("img");
@@ -184,8 +183,9 @@ const DragDrop = {
 
       const isSameZone = dropInfo && dropInfo.zone === zone;
       const isBattlefield = dropInfo && dropInfo.zone === "battlefield";
+      const isHand = dropInfo && dropInfo.zone === "hand";
 
-      if (dropInfo && (!isSameZone || isBattlefield)) {
+      if (dropInfo && (!isSameZone || isBattlefield || isHand)) {
         const zoneEl = document.querySelector(`[data-drop-zone="${dropInfo.zone}"]`);
         if (zoneEl) {
           const zoneRect = zoneEl.getBoundingClientRect();
@@ -213,8 +213,7 @@ const DragDrop = {
         this._handInsertIndex = null;
         this.cleanupDragGhost();
         if (draggedEl) {
-          draggedEl.style.opacity = "";
-          draggedEl.style.pointerEvents = "";
+          draggedEl.style.display = "";
         }
       }
     };
@@ -342,8 +341,7 @@ const DragDrop = {
   cleanupDrag() {
     this.cleanupDragGhost();
     if (this.draggedEl) {
-      this.draggedEl.style.opacity = "";
-      this.draggedEl.style.pointerEvents = "";
+      this.draggedEl.style.display = "";
       this.draggedEl = null;
     }
   }
