@@ -149,10 +149,10 @@
   z-index: 10;
 }
 
-/* Tapped rotation - offset so card rotates around its visual center */
+/* Tapped rotation - rotate 90° keeping the card center in place */
 .card-on-battlefield.rotate-90 {
-  transform: rotate(90deg) translateY(-100%);
-  transform-origin: top left;
+  transform: rotate(90deg);
+  transform-origin: center center;
 }
 
 /* Game container fills viewport */
@@ -164,4 +164,10 @@
 #context-menu {
   position: fixed;
   z-index: 9000;
+}
+
+/* Pile zone hover */
+[data-pile-zone]:hover {
+  outline: 2px solid rgba(167, 139, 250, 0.5);
+  outline-offset: 2px;
 }

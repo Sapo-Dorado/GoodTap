@@ -62,7 +62,8 @@ defmodule Goodtap.GameEngine.State do
       "is_double_faced" => is_dfc,
       "image_uris" => extract_image_uris(card.data),
       "counters" => [],
-      "tapped" => false
+      "tapped" => false,
+      "known" => false
     }
   end
 
@@ -98,7 +99,7 @@ defmodule Goodtap.GameEngine.State do
   Returns the card back URL used for face-down or hidden cards.
   """
   def card_back_url do
-    "https://cards.scryfall.io/normal/back/0/a/0aeebaf5-8c7d-4636-9e82-8c27447861f7.jpg"
+    "/images/CardBack.png"
   end
 
   @doc """
@@ -107,6 +108,9 @@ defmodule Goodtap.GameEngine.State do
   def card_display_url(card_instance, viewer_role, owner_role, zone) do
     cond do
       hidden_from_viewer?(viewer_role, owner_role, zone) ->
+        card_back_url()
+
+      zone == "deck" and not card_instance["known"] ->
         card_back_url()
 
       card_instance["is_face_down"] ->

@@ -30,7 +30,7 @@ defmodule GoodtapWeb.Hotkeys do
   end
 
   def valid_actions_for("deck") do
-    [:draw, :shuffle, :scry, :move_to_graveyard, :move_to_exile]
+    [:draw, :shuffle, :scry]
   end
 
   def valid_actions_for("deck_top") do

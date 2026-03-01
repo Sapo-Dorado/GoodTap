@@ -41,14 +41,34 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Move to Hand ─────────────────────────────────────────────────────────
 
-  def move_to_hand(state, player, instance_id, source_zone) do
+  def move_to_hand(state, player, instance_id, source_zone, insert_index \\ nil) do
+    # When reordering within the hand, find the original index before removal
+    # so we can adjust the target index after the card is removed
+    original_hand_index =
+      if source_zone == "hand" && is_integer(insert_index) do
+        hand = get_in(state, [player, "zones", "hand"]) || []
+        Enum.find_index(hand, fn c -> c["instance_id"] == instance_id end)
+      end
+
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       card = Map.put(card, "tapped", false)
 
       if card["is_token"] do
         {:ok, state}
       else
-        {:ok, append_to_zone(state, player, "hand", card)}
+        adjusted_index =
+          if is_integer(insert_index) && is_integer(original_hand_index) &&
+               original_hand_index < insert_index do
+            insert_index - 1
+          else
+            insert_index
+          end
+
+        if is_integer(adjusted_index) do
+          {:ok, insert_into_zone(state, player, "hand", card, adjusted_index)}
+        else
+          {:ok, append_to_zone(state, player, "hand", card)}
+        end
       end
     end
   end
@@ -57,7 +77,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_deck_top(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false)
+      card = card |> reset_face() |> Map.put("tapped", false) |> mark_known_from(source_zone)
 
       if card["is_token"] do
         {:ok, state}
@@ -69,7 +89,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_deck_bottom(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false)
+      card = card |> reset_face() |> Map.put("tapped", false) |> mark_known_from(source_zone)
 
       if card["is_token"] do
         {:ok, state}
@@ -132,7 +152,13 @@ defmodule Goodtap.GameEngine.Actions do
   # ─── Shuffle ──────────────────────────────────────────────────────────────
 
   def shuffle(state, player) do
-    state = update_in(state, [player, "zones", "deck"], &Enum.shuffle/1)
+    state =
+      update_in(state, [player, "zones", "deck"], fn deck ->
+        deck
+        |> Enum.map(&Map.put(&1, "known", false))
+        |> Enum.shuffle()
+      end)
+
     {:ok, state}
   end
 
@@ -158,10 +184,10 @@ defmodule Goodtap.GameEngine.Actions do
 
         case dest do
           "top" ->
-            {st, [card | tops], bottoms}
+            {st, [Map.put(card, "known", true) | tops], bottoms}
 
           "bottom" ->
-            {st, tops, bottoms ++ [card]}
+            {st, tops, bottoms ++ [Map.put(card, "known", true)]}
 
           "graveyard" ->
             {:ok, st} = move_to_graveyard_direct(st, player, card)
@@ -354,9 +380,22 @@ defmodule Goodtap.GameEngine.Actions do
     update_in(state, [player, "zones", zone], fn cards -> cards ++ [card] end)
   end
 
+  defp insert_into_zone(state, player, zone, card, index) do
+    update_in(state, [player, "zones", zone], fn cards ->
+      clamped = max(0, min(index, length(cards)))
+      List.insert_at(cards, clamped, card)
+    end)
+  end
+
   defp reset_face(card) do
     card
     |> Map.put("is_face_down", false)
     |> Map.put("active_face", 0)
   end
+
+  # Mark a card as known when it comes from a visible zone (player could see it)
+  defp mark_known_from(card, source_zone) when source_zone in ["hand", "battlefield", "graveyard", "exile"] do
+    Map.put(card, "known", true)
+  end
+  defp mark_known_from(card, _source_zone), do: card
 end

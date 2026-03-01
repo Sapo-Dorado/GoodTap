@@ -30,10 +30,8 @@ defmodule GoodtapWeb.GameLive do
          # UI state
          open_zone: nil,
          context_menu: nil,
-         selected_card: nil,
          # Scry
          scry_session: nil,
-         scry_count_input: "1",
          # Token search
          token_search: nil,
          token_query: "",
@@ -83,48 +81,50 @@ defmodule GoodtapWeb.GameLive do
       zone: zone,
       x: x,
       y: y,
-      actions: actions
+      actions: actions,
+      scry_count: 1
     }
 
-    {:noreply, assign(socket, context_menu: context_menu, selected_card: instance_id)}
+    {:noreply, assign(socket, context_menu: context_menu)}
   end
 
   def handle_event("close_context_menu", _params, socket) do
     {:noreply, assign(socket, context_menu: nil)}
   end
 
+  def handle_event("adjust_scry_count", %{"delta" => delta}, socket) do
+    case socket.assigns.context_menu do
+      nil -> {:noreply, socket}
+      menu ->
+        new_count = max(1, min(20, menu.scry_count + String.to_integer(delta)))
+        {:noreply, assign(socket, context_menu: %{menu | scry_count: new_count})}
+    end
+  end
+
   # ─── Keyboard Shortcuts ───────────────────────────────────────────────────
 
-  def handle_event("keydown", %{"key" => key} = params, socket) do
-    _shift = Map.get(params, "shift", false)
-    selected = socket.assigns.selected_card
-    state = socket.assigns.game_state
-    player = socket.assigns.my_role
-
+  def handle_event("hotkey", %{"key" => key, "instance_id" => id, "zone" => zone}, socket) do
     case key do
-      "d" when not is_nil(selected) ->
-        zone = find_card_zone(state, player, selected)
-        apply_action(socket, fn st, p -> Actions.move_to_graveyard(st, p, selected, zone) end)
+      "d" when not is_nil(id) ->
+        apply_action(socket, fn st, p -> Actions.move_to_graveyard(st, p, id, zone) end)
 
-      "s" when not is_nil(selected) ->
-        zone = find_card_zone(state, player, selected)
-        apply_action(socket, fn st, p -> Actions.move_to_exile(st, p, selected, zone) end)
+      "s" when not is_nil(id) ->
+        apply_action(socket, fn st, p -> Actions.move_to_exile(st, p, id, zone) end)
 
-      "f" when not is_nil(selected) ->
-        zone = find_card_zone(state, player, selected)
-        apply_action(socket, fn st, p -> Actions.flip_card(st, p, selected, zone) end)
+      "f" when not is_nil(id) ->
+        apply_action(socket, fn st, p -> Actions.flip_card(st, p, id, zone) end)
 
-      " " when not is_nil(selected) ->
-        apply_action(socket, fn st, p -> Actions.tap(st, p, selected) end)
+      "space" when not is_nil(id) ->
+        apply_action(socket, fn st, p -> Actions.tap(st, p, id) end)
 
       "v" ->
         apply_action(socket, fn st, p -> Actions.shuffle(st, p) end)
 
-      "u" when not is_nil(selected) ->
-        {:noreply, assign(socket, adding_counter_to: selected, counter_name_input: "")}
+      "u" when not is_nil(id) ->
+        {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
 
-      "k" when not is_nil(selected) ->
-        apply_action(socket, fn st, p -> Actions.copy_card(st, p, selected) end)
+      "k" when not is_nil(id) ->
+        apply_action(socket, fn st, p -> Actions.copy_card(st, p, id) end)
 
       "w" ->
         {:noreply, assign(socket, token_search: true, token_query: "", token_results: [])}
@@ -199,7 +199,13 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_event("action", %{"type" => "draw", "count" => count}, socket) do
     apply_action(socket, fn state, player ->
-      Actions.draw(state, player, count)
+      Actions.draw(state, player, String.to_integer(to_string(count)))
+    end)
+  end
+
+  def handle_event("action", %{"type" => "draw"}, socket) do
+    apply_action(socket, fn state, player ->
+      Actions.draw(state, player, 1)
     end)
   end
 
@@ -310,8 +316,12 @@ defmodule GoodtapWeb.GameLive do
             end)
 
           "hand" ->
+            insert_index = case params["insert_index"] do
+              nil -> nil
+              idx -> trunc(idx)
+            end
             apply_action_inline(socket, fn state, player ->
-              Actions.move_to_hand(state, player, instance_id, from_zone)
+              Actions.move_to_hand(state, player, instance_id, from_zone, insert_index)
             end)
 
           "deck" ->
@@ -333,18 +343,10 @@ defmodule GoodtapWeb.GameLive do
     end)
   end
 
-  def handle_event("select_card", %{"instance_id" => id}, socket) do
-    {:noreply, assign(socket, selected_card: id, context_menu: nil)}
-  end
-
-  def handle_event("deselect_card", _params, socket) do
-    {:noreply, assign(socket, selected_card: nil, context_menu: nil)}
-  end
-
   # ─── Scry ─────────────────────────────────────────────────────────────────
 
   def handle_event("begin_scry", %{"count" => count_str}, socket) do
-    count = min(String.to_integer(count_str), 20)
+    count = min(String.to_integer(to_string(count_str)), 20)
     state = socket.assigns.game_state
     player = socket.assigns.my_role
 
@@ -353,6 +355,7 @@ defmodule GoodtapWeb.GameLive do
     {:noreply,
      assign(socket,
        game_state: new_state,
+       context_menu: nil,
        scry_session: %{cards: top_cards, count: count, decisions: %{}}
      )}
   end
@@ -390,10 +393,6 @@ defmodule GoodtapWeb.GameLive do
     else
       {:noreply, socket}
     end
-  end
-
-  def handle_event("scry_count_input", %{"value" => val}, socket) do
-    {:noreply, assign(socket, scry_count_input: val)}
   end
 
   # ─── Token Search ─────────────────────────────────────────────────────────
@@ -463,6 +462,7 @@ defmodule GoodtapWeb.GameLive do
   defp apply_action(socket, action_fn) do
     state = socket.assigns.game_state
     player = socket.assigns.my_role
+    socket = assign(socket, context_menu: nil)
 
     case action_fn.(state, player) do
       {:ok, new_state} ->
@@ -495,15 +495,6 @@ defmodule GoodtapWeb.GameLive do
     assign(socket, game_state: new_state)
   end
 
-  defp find_card_zone(state, player, instance_id) do
-    zones = ["hand", "battlefield", "graveyard", "exile", "deck"]
-
-    Enum.find(zones, fn zone ->
-      cards = get_in(state, [player, "zones", zone]) || []
-      Enum.any?(cards, fn c -> c["instance_id"] == instance_id end)
-    end)
-  end
-
   # ─── Template Helpers ─────────────────────────────────────────────────────
 
   defp my_state(game_state, my_role), do: game_state[my_role] || %{}
@@ -528,8 +519,6 @@ defmodule GoodtapWeb.GameLive do
       id="game-container"
       class="game-layout h-screen flex flex-col overflow-hidden bg-gray-950 select-none"
       phx-hook="DragDrop"
-      phx-window-keydown="keydown"
-      phx-click="deselect_card"
     >
       <%!-- Opponent Area (top half) --%>
       <div class="flex-[2] flex flex-col min-h-0">
@@ -626,16 +615,13 @@ defmodule GoodtapWeb.GameLive do
               class={[
                 "card-on-battlefield absolute cursor-pointer transition-transform",
                 if(card["tapped"], do: "rotate-90", else: ""),
-                if(card["instance_id"] == @selected_card, do: "ring-2 ring-yellow-400 rounded", else: "")
-              ]}
+]}
               style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
               data-draggable="true"
               data-instance-id={card["instance_id"]}
               data-zone="battlefield"
               data-owner={@my_role}
               data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
-              phx-click={JS.push("select_card", value: %{instance_id: card["instance_id"]})}
-              phx-value-instance_id={card["instance_id"]}
             >
               <img
                 src={card_display_url(card, @my_role, @my_role, "battlefield")}
@@ -675,6 +661,100 @@ defmodule GoodtapWeb.GameLive do
             </div>
           <% end %>
 
+          <%!-- Zone Piles (sideways / landscape orientation to distinguish from battlefield cards) --%>
+          <%!-- Graveyard pile: bottom-left (sideways / landscape) --%>
+          <div
+            id="pile-graveyard"
+            class="zone-pile absolute cursor-pointer rounded shadow-lg overflow-hidden"
+            style="width: 78px; height: 56px; bottom: 8px; left: 8px; z-index: 20;"
+            data-drop-zone="graveyard"
+            data-pile-zone="graveyard"
+            phx-click="open_zone"
+            phx-value-zone="graveyard"
+            phx-value-owner={@my_role}
+          >
+            <%= if zone_cards(@my, "graveyard") != [] do %>
+              <img
+                src={card_display_url(hd(zone_cards(@my, "graveyard")), @my_role, @my_role, "graveyard")}
+                class="rounded"
+                style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
+                draggable="false"
+              />
+            <% else %>
+              <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
+                <span class="text-gray-400 text-xs font-semibold">GY</span>
+              </div>
+            <% end %>
+            <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4">
+              {length(zone_cards(@my, "graveyard"))}
+            </div>
+          </div>
+
+          <%!-- Exile pile: above graveyard on left (sideways / landscape) --%>
+          <div
+            id="pile-exile"
+            class="zone-pile absolute cursor-pointer rounded shadow-lg overflow-hidden"
+            style="width: 78px; height: 56px; bottom: 72px; left: 8px; z-index: 20;"
+            data-drop-zone="exile"
+            data-pile-zone="exile"
+            phx-click="open_zone"
+            phx-value-zone="exile"
+            phx-value-owner={@my_role}
+          >
+            <%= if zone_cards(@my, "exile") != [] do %>
+              <img
+                src={card_display_url(hd(zone_cards(@my, "exile")), @my_role, @my_role, "exile")}
+                class="rounded"
+                style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
+                draggable="false"
+              />
+            <% else %>
+              <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
+                <span class="text-gray-400 text-xs font-semibold">EX</span>
+              </div>
+            <% end %>
+            <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4">
+              {length(zone_cards(@my, "exile"))}
+            </div>
+          </div>
+
+          <%!-- Deck pile: bottom-right (upright, top card draggable) --%>
+          <div
+            id="pile-deck"
+            class="zone-pile absolute rounded shadow-lg overflow-hidden"
+            style="width: 56px; height: 78px; bottom: 8px; right: 8px; z-index: 20;"
+            data-drop-zone="deck"
+            data-pile-zone="deck"
+            phx-click="open_zone"
+            phx-value-zone="deck"
+            phx-value-owner={@my_role}
+          >
+            <%= if zone_cards(@my, "deck") != [] do %>
+              <%!-- Persistent background image (always visible, even during drag) --%>
+              <img
+                src={State.card_back_url()}
+                class="absolute inset-0 w-full h-full object-cover rounded pointer-events-none"
+                draggable="false"
+              />
+              <%!-- Transparent draggable overlay for the top card --%>
+              <div
+                class="absolute inset-0 cursor-pointer"
+                data-draggable="true"
+                data-instance-id={hd(zone_cards(@my, "deck"))["instance_id"]}
+                data-zone="deck"
+                data-owner={@my_role}
+                data-card-img={State.card_back_url()}
+              ></div>
+              <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none" style="z-index: 1;">
+                {length(zone_cards(@my, "deck"))}
+              </div>
+            <% else %>
+              <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
+                <span class="text-gray-400 text-xs font-semibold">DECK</span>
+              </div>
+            <% end %>
+          </div>
+
           <%!-- Right-click context placeholder (handled via JS) --%>
           <div
             :if={@context_menu}
@@ -683,18 +763,41 @@ defmodule GoodtapWeb.GameLive do
             style={"left: #{@context_menu.x}px; top: #{@context_menu.y}px;"}
           >
             <%= for action <- @context_menu.actions do %>
-              <button
-                class="w-full text-left px-4 py-2 text-sm hover:bg-gray-700 flex items-center justify-between"
-                phx-click="action"
-                phx-value-type={action}
-                phx-value-instance_id={@context_menu.instance_id}
-                phx-value-zone={@context_menu.zone}
-              >
-                <span>{Hotkeys.action_label(action)}</span>
-                <span :if={Hotkeys.key_for(action)} class="text-xs text-gray-400 ml-4">
-                  {Hotkeys.display_for(action)}
-                </span>
-              </button>
+              <%= if action == :scry do %>
+                <%!-- Scry row: label + count adjuster + confirm --%>
+                <div class="flex items-center px-4 py-2 text-sm gap-2">
+                  <span class="flex-1">Scry</span>
+                  <button
+                    phx-click="adjust_scry_count"
+                    phx-value-delta="-1"
+                    class="text-gray-400 hover:text-white w-5 text-center"
+                  >−</button>
+                  <span class="font-mono w-4 text-center">{@context_menu.scry_count}</span>
+                  <button
+                    phx-click="adjust_scry_count"
+                    phx-value-delta="1"
+                    class="text-gray-400 hover:text-white w-5 text-center"
+                  >+</button>
+                  <button
+                    phx-click="begin_scry"
+                    phx-value-count={@context_menu.scry_count}
+                    class="btn btn-xs btn-outline ml-1"
+                  >Go</button>
+                </div>
+              <% else %>
+                <button
+                  class="w-full text-left px-4 py-2 text-sm hover:bg-gray-700 flex items-center justify-between"
+                  phx-click="action"
+                  phx-value-type={action}
+                  phx-value-instance_id={@context_menu.instance_id}
+                  phx-value-zone={@context_menu.zone}
+                >
+                  <span>{Hotkeys.action_label(action)}</span>
+                  <span :if={Hotkeys.key_for(action)} class="text-xs text-gray-400 ml-4">
+                    {Hotkeys.display_for(action)}
+                  </span>
+                </button>
+              <% end %>
             <% end %>
           </div>
         </div>
@@ -751,33 +854,7 @@ defmodule GoodtapWeb.GameLive do
             />
           </form>
 
-          <%!-- Zone buttons --%>
           <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
-            <button
-              phx-click="open_zone"
-              phx-value-zone="deck"
-              phx-value-owner={@my_role}
-              class="hover:text-white"
-            >
-              Deck: {length(zone_cards(@my, "deck"))}
-            </button>
-            <button
-              phx-click="open_zone"
-              phx-value-zone="graveyard"
-              phx-value-owner={@my_role}
-              class="hover:text-white"
-            >
-              GY: {length(zone_cards(@my, "graveyard"))}
-            </button>
-            <button
-              phx-click="open_zone"
-              phx-value-zone="exile"
-              phx-value-owner={@my_role}
-              class="hover:text-white"
-            >
-              EX: {length(zone_cards(@my, "exile"))}
-            </button>
-            <span class="mx-2 border-l border-gray-600 h-4"></span>
             <button phx-click="show_end_game" class="text-red-400 hover:text-red-300">
               End Game
             </button>
@@ -788,30 +865,73 @@ defmodule GoodtapWeb.GameLive do
         <div
           id="my-hand"
           data-drop-zone="hand"
-          class="flex items-center gap-1 px-4 py-2 bg-gray-900 border-t border-gray-700 overflow-x-auto shrink-0"
+          class="flex items-center bg-gray-900 border-t border-gray-700 overflow-x-auto shrink-0"
           style="height: 120px;"
         >
-          <%= for card <- zone_cards(@my, "hand") do %>
-            <div
-              id={"hand-card-#{card["instance_id"]}"}
-              class={[
-                "shrink-0 cursor-pointer hover:scale-110 transition-transform relative",
-                if(card["instance_id"] == @selected_card, do: "ring-2 ring-yellow-400 rounded scale-110", else: "")
-              ]}
-              data-draggable="true"
-              data-instance-id={card["instance_id"]}
-              data-zone="hand"
-              data-owner={@my_role}
-              data-card-img={card_display_url(card, @my_role, @my_role, "hand")}
-              phx-click={JS.push("select_card", value: %{instance_id: card["instance_id"]})}
-            >
-              <img
-                src={card_display_url(card, @my_role, @my_role, "hand")}
-                class="h-24 w-auto rounded shadow"
-                draggable="false"
-              />
+          <div class="flex items-center gap-1 px-4 py-2 justify-center min-w-full">
+            <%= for card <- zone_cards(@my, "hand") do %>
+              <div
+                id={"hand-card-#{card["instance_id"]}"}
+                class={[
+                  "shrink-0 cursor-pointer hover:scale-110 transition-transform relative",
+                  ]}
+                data-draggable="true"
+                data-instance-id={card["instance_id"]}
+                data-zone="hand"
+                data-owner={@my_role}
+                data-card-img={card_display_url(card, @my_role, @my_role, "hand")}
+              >
+                <img
+                  src={card_display_url(card, @my_role, @my_role, "hand")}
+                  class="h-24 w-auto rounded shadow"
+                  draggable="false"
+                />
+              </div>
+            <% end %>
+          </div>
+        </div>
+
+        <%!-- Zone Popup (inline, below hand) --%>
+        <div
+          :if={@open_zone}
+          class="bg-gray-900 border-t border-gray-600 shrink-0"
+          style="height: 180px;"
+        >
+          <div class="flex items-center justify-between px-4 py-1 border-b border-gray-700">
+            <span class="font-semibold text-sm">
+              {elem(@open_zone, 1) |> String.capitalize()} ({length(zone_cards(
+                if(elem(@open_zone, 0) == @my_role, do: @my, else: @opp),
+                elem(@open_zone, 1)
+              ))} cards)
+            </span>
+            <button phx-click="close_zone" class="text-gray-400 hover:text-white text-xl leading-none">×</button>
+          </div>
+          <div
+            class="flex overflow-x-auto"
+            style="height: 148px;"
+          >
+            <div class="flex items-center gap-2 px-4 py-2 justify-center min-w-full">
+              <%= for card <- zone_cards(
+                if(elem(@open_zone, 0) == @my_role, do: @my, else: @opp),
+                elem(@open_zone, 1)
+              ) do %>
+                <div
+                  class="shrink-0 cursor-pointer hover:scale-105 transition-transform"
+                  data-draggable="true"
+                  data-instance-id={card["instance_id"]}
+                  data-zone={elem(@open_zone, 1)}
+                  data-owner={elem(@open_zone, 0)}
+                  data-card-img={card_display_url(card, @my_role, elem(@open_zone, 0), elem(@open_zone, 1))}
+                >
+                  <img
+                    src={card_display_url(card, @my_role, elem(@open_zone, 0), elem(@open_zone, 1))}
+                    class="h-32 w-auto rounded shadow"
+                    draggable="false"
+                  />
+                </div>
+              <% end %>
             </div>
-          <% end %>
+          </div>
         </div>
       </div>
 
@@ -828,45 +948,6 @@ defmodule GoodtapWeb.GameLive do
           style="height: 420px; width: auto;"
           draggable="false"
         />
-      </div>
-
-      <%!-- Zone Popup --%>
-      <div
-        :if={@open_zone}
-        class="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 border-t border-gray-600 shadow-2xl"
-        style="height: 220px;"
-      >
-        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-700">
-          <span class="font-semibold text-sm">
-            {elem(@open_zone, 1) |> String.capitalize()} ({length(zone_cards(
-              if(elem(@open_zone, 0) == @my_role, do: @my, else: @opp),
-              elem(@open_zone, 1)
-            ))} cards)
-          </span>
-          <button phx-click="close_zone" class="text-gray-400 hover:text-white text-xl">×</button>
-        </div>
-
-        <div class="flex gap-2 px-4 py-2 overflow-x-auto h-full">
-          <%= for card <- zone_cards(
-            if(elem(@open_zone, 0) == @my_role, do: @my, else: @opp),
-            elem(@open_zone, 1)
-          ) do %>
-            <div
-              class="shrink-0 cursor-pointer hover:scale-105 transition-transform"
-              data-draggable="true"
-              data-instance-id={card["instance_id"]}
-              data-zone={elem(@open_zone, 1)}
-              data-owner={elem(@open_zone, 0)}
-              phx-click={JS.push("select_card", value: %{instance_id: card["instance_id"]})}
-            >
-              <img
-                src={card_display_url(card, @my_role, elem(@open_zone, 0), elem(@open_zone, 1))}
-                class="h-36 w-auto rounded shadow"
-                draggable="false"
-              />
-            </div>
-          <% end %>
-        </div>
       </div>
 
       <%!-- Scry Modal --%>
@@ -886,7 +967,7 @@ defmodule GoodtapWeb.GameLive do
             <%= for card <- @scry_session.cards do %>
               <div class="shrink-0 text-center">
                 <img
-                  src={card_display_url(card, @my_role, @my_role, "deck")}
+                  src={card_display_url(Map.put(card, "known", true), @my_role, @my_role, "deck")}
                   class="h-40 w-auto rounded shadow mx-auto mb-2"
                 />
                 <div class="text-xs text-gray-300 mb-2 max-w-24 truncate">{card["name"]}</div>
@@ -931,26 +1012,6 @@ defmodule GoodtapWeb.GameLive do
             <% end %>
           </div>
         </div>
-      </div>
-
-      <%!-- Scry Input --%>
-      <div
-        :if={is_nil(@scry_session)}
-        class="fixed bottom-20 right-4 z-30 flex items-center gap-2"
-      >
-        <form phx-submit="begin_scry" class="flex items-center gap-2">
-          <input
-            type="number"
-            name="count"
-            value={@scry_count_input}
-            min="1"
-            max="20"
-            class="input input-xs bg-gray-800 w-16 text-center"
-            placeholder="N"
-            phx-change="scry_count_input"
-          />
-          <button type="submit" class="btn btn-xs btn-outline">Scry</button>
-        </form>
       </div>
 
       <%!-- Token Search Modal --%>
