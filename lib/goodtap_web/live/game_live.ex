@@ -752,6 +752,7 @@ defmodule GoodtapWeb.GameLive do
               data-owner={@my_role}
               data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
               data-selected={if MapSet.member?(@selected_cards, card["instance_id"]), do: "true", else: "false"}
+              data-is-token={if card["is_token"], do: "true", else: "false"}
             >
               <div class="flex flex-col items-center">
                 <%!-- Card image with hover highlight --%>
@@ -1025,6 +1026,7 @@ defmodule GoodtapWeb.GameLive do
                 data-zone="hand"
                 data-owner={@my_role}
                 data-card-img={card_display_url(card, @my_role, @my_role, "hand")}
+                data-is-token={if card["is_token"], do: "true", else: "false"}
               >
                 <img
                   src={card_display_url(card, @my_role, @my_role, "hand")}

@@ -393,16 +393,17 @@ const DragDrop = {
 
         // ── Optimistic rendering ──────────────────────────────────────────
         //
-        // For same-zone moves we can immediately place the card at its
-        // destination so there is no gap between drop and server confirmation.
-        // We use the exact same values the server will compute, so when
-        // LiveView's morphdom patch arrives it finds the DOM already correct
-        // and makes no visible change.  If the server disagrees (error path)
-        // morphdom will snap-correct on the next render — acceptable.
+        // Immediately place the card at its destination so there is no gap
+        // between drop and the server's LiveView patch.  We build the DOM to
+        // match exactly what the server will render, so morphdom finds the
+        // element already correct and makes no visible change.  On the rare
+        // error path morphdom snap-corrects — acceptable.
         //
-        // Cross-zone moves are left to the server: the card stays hidden until
-        // LiveView re-renders, because the destination element structure is
-        // different enough that building it in JS would be fragile.
+        // We use element ids that match the server template so morphdom tracks
+        // them by identity, not by position, preventing any duplication.
+        //
+        // Skipped for: → graveyard / exile / deck (complex pile HTML),
+        // tokens → hand (server silently drops them), and find-mode reorders.
 
         if (isBattlefield && zone === "battlefield") {
           // ── Battlefield reposition ──
@@ -460,11 +461,63 @@ const DragDrop = {
             }
             this.draggedEl = null;
           }
-          // If isFind or insertIndex is null, fall through: draggedEl stays set,
-          // card remains hidden, server re-render will restore it.
+          // If isFind or insertIndex is null, draggedEl stays set; server re-render restores.
+
+        } else if (dropInfo.zone === "battlefield" && zone !== "battlefield") {
+          // ── Cross-zone → battlefield ──
+          // Build the exact element the server will render for a battlefield card
+          // and append it to #my-battlefield.  morphdom finds it by id and patches
+          // any attribute differences in-place — no positional jump.
+          const bf = document.getElementById("my-battlefield");
+          if (bf) {
+            const el = document.createElement("div");
+            el.id = `card-${instanceId}`;
+            el.className = "card-on-battlefield absolute cursor-pointer transition-transform";
+            el.style.left = Math.trunc(relX * 100) + "%";
+            el.style.top = Math.trunc(relY * 100) + "%";
+            el.setAttribute("data-draggable", "true");
+            el.setAttribute("data-instance-id", instanceId);
+            el.setAttribute("data-zone", "battlefield");
+            el.setAttribute("data-owner", this.myRole);
+            el.setAttribute("data-card-img", imgSrc);
+            el.setAttribute("data-selected", "false");
+            el.setAttribute("data-is-token", card.dataset.isToken || "false");
+            el.innerHTML = `<div class="flex flex-col items-center"><div class="card-draggable"><img src="${imgSrc}" class="card-image rounded shadow-lg" draggable="false" /></div></div>`;
+            bf.appendChild(el);
+            // Original element (in source zone) stays hidden; server patch removes it.
+            this.draggedEl = null;
+          }
+
+        } else if (dropInfo.zone === "hand" && card.dataset.isToken !== "true") {
+          // ── Cross-zone → hand ──
+          // Tokens are silently dropped by the server, so skip them.
+          // For real cards, build the hand card element at the insert position.
+          const handInner = document.querySelector("#my-hand > div");
+          if (handInner) {
+            const el = document.createElement("div");
+            el.id = `hand-card-${instanceId}`;
+            el.className = "shrink-0 cursor-pointer hover:scale-110 transition-transform relative";
+            el.setAttribute("data-draggable", "true");
+            el.setAttribute("data-instance-id", instanceId);
+            el.setAttribute("data-zone", "hand");
+            el.setAttribute("data-owner", this.myRole);
+            el.setAttribute("data-card-img", imgSrc);
+            el.setAttribute("data-is-token", "false");
+            el.innerHTML = `<img src="${imgSrc}" class="h-24 w-auto rounded shadow" draggable="false" />`;
+
+            const siblings = Array.from(handInner.querySelectorAll("[data-draggable]"));
+            const idx = insertIndex !== null ? insertIndex : siblings.length;
+            if (idx >= siblings.length) {
+              handInner.appendChild(el);
+            } else {
+              handInner.insertBefore(el, siblings[idx]);
+            }
+            // Original element (in source zone) stays hidden; server patch removes it.
+            this.draggedEl = null;
+          }
         }
-        // For cross-zone moves: card stays hidden; server re-render restores it.
-        // draggedEl remains set so cleanupDrag() can restore it if needed.
+        // For → graveyard, → exile, → deck: card stays hidden; server re-render restores.
+        // draggedEl remains set so cleanupDrag() can restore if the drop fails.
 
         // Collect selected instance ids for multi-card battlefield moves
         const selectedIds = [instanceId, ...this.extraGhosts.map(eg => eg.el.dataset.instanceId)];
