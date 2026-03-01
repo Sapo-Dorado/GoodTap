@@ -378,31 +378,23 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Private Helpers ─────────────────────────────────────────────────────
 
-  # Nudge x right by 1% steps until the card no longer significantly overlaps any
-  # other battlefield card, or placing it further right would clip it outside the
-  # battlefield. Two cards are considered overlapping when their positions are within
-  # @nudge_threshold percent on both axes. The stop boundary of 94% leaves enough
-  # room for the card (~56px) to be fully visible at typical battlefield widths.
+  # Nudge x right by 1% steps until no other card occupies the same rounded-percent
+  # position, or the battlefield boundary (98%) is reached. Uses round() instead of
+  # trunc() to avoid float drift (e.g. 57/100*100 = 56.999... -> trunc = 56 != 57).
   # Pass exclude_instance_id to ignore the card being moved.
-  @nudge_threshold 1
-  @nudge_step 1
-  @nudge_max_x 94
   defp nudge_if_occupied(state, player, x, y, exclude_instance_id) do
     bf = get_in(state, [player, "zones", "battlefield"]) || []
-    positions =
+    occupied =
       bf
       |> Enum.reject(fn c -> exclude_instance_id != nil and c["instance_id"] == exclude_instance_id end)
-      |> Enum.map(fn c -> {trunc((c["x"] || 0) * 100), trunc((c["y"] || 0) * 100)} end)
-    ty = trunc(y * 100)
-    overlaps? = fn cx ->
-      Enum.any?(positions, fn {px, py} ->
-        abs(px - cx) < @nudge_threshold and abs(py - ty) < @nudge_threshold
-      end)
-    end
+      |> MapSet.new(fn c -> {round((c["x"] || 0) * 100), round((c["y"] || 0) * 100)} end)
+    ty = round(y * 100)
+    start = round(x * 100)
     tx =
-      Stream.iterate(trunc(x * 100), &(&1 + @nudge_step))
-      |> Enum.find(fn cx -> cx >= @nudge_max_x or not overlaps?.(cx) end)
-    {tx / 100, y}
+      Stream.iterate(start, &(&1 + 1))
+      |> Enum.find(fn cx -> cx >= 98 or not MapSet.member?(occupied, {cx, ty}) end)
+    # Store as integer percent / 100 so trunc(result * 100) == tx (no float drift).
+    {tx / 100, ty / 100}
   end
 
   defp find_in_zone(state, player, zone, instance_id) do

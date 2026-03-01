@@ -553,38 +553,42 @@ const DragDrop = {
     document.addEventListener("mouseup", onUp);
   },
 
-  // Shift relX right by 1% steps until the dropped card no longer significantly
-  // overlaps any other battlefield card, or placing it further right would clip it
-  // outside the battlefield. Two cards are considered overlapping when their positions
-  // are within NUDGE_THRESHOLD percent on both axes.
+  // Shift relX right by 1% steps until no other battlefield card occupies the same
+  // truncated position, or until the card's right edge would leave the battlefield.
   nudgeIfOccupied(relX, relY, excludeInstanceId, zoneRect) {
-    const NUDGE_THRESHOLD = 1; // percent — only nudge on near-exact overlaps
-    const NUDGE_STEP = 1;      // percent per step
-
-    // Stop before the card's right edge would leave the battlefield.
-    // zoneRect may be undefined (e.g. for cross-zone drops before layout); fall back to 94%.
+    // Stop before the card's right edge would clip outside the battlefield.
+    // zoneRect may be undefined (server-initiated drops); fall back to 98%.
     const maxX = zoneRect
       ? Math.floor((1 - CARD_W / zoneRect.width) * 100)
-      : 94;
+      : 98;
 
     const cards = Array.from(
       document.querySelectorAll(`[data-draggable][data-zone="battlefield"][data-owner="${this.myRole}"]`)
     ).filter(el => el.dataset.instanceId !== excludeInstanceId && el.style.display !== "none");
 
-    const positions = cards.map(el => ({
-      x: Math.trunc(parseFloat(el.style.left)),
-      y: Math.trunc(parseFloat(el.style.top)),
-    }));
+    // Use Math.round (not trunc) when reading back stored positions to avoid
+    // float round-trip errors (e.g. trunc(0.57 * 100) = 56, not 57).
+    const occupied = new Set(cards.map(el =>
+      `${Math.round(parseFloat(el.style.left))},${Math.round(parseFloat(el.style.top))}`
+    ));
 
-    const ty = Math.trunc(relY * 100);
-    let tx = Math.trunc(relX * 100);
+    const ty = Math.round(relY * 100);
+    const start = Math.trunc(relX * 100); // trunc for drop position matches server render
 
-    const overlaps = (cx) => positions.some(p =>
-      Math.abs(p.x - cx) < NUDGE_THRESHOLD && Math.abs(p.y - ty) < NUDGE_THRESHOLD
-    );
+    // Search rightward first
+    let right = start;
+    while (occupied.has(`${right},${ty}`) && right < maxX) {
+      right += 1;
+    }
 
-    while (overlaps(tx) && tx < maxX) {
-      tx += NUDGE_STEP;
+    // If rightward hit the boundary and that slot is still occupied, try leftward
+    let tx = right;
+    if (right >= maxX && occupied.has(`${right},${ty}`)) {
+      let left = start - 1;
+      while (occupied.has(`${left},${ty}`) && left > 0) {
+        left -= 1;
+      }
+      if (!occupied.has(`${left},${ty}`)) tx = left;
     }
 
     return { relX: tx / 100, relY };
