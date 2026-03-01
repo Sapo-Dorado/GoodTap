@@ -1,6 +1,10 @@
 const CARD_W = 56;
 const CARD_H = 78;
 
+// Zones that show an insert-ghost indicator and support index-based reordering.
+// Maps drop-zone name -> ghost card height in px.
+const LIST_ZONES = { hand: 96, deck: 128, graveyard: 128, exile: 128 };
+
 const DragDrop = {
   mounted() {
     this.dragging = null;
@@ -8,8 +12,8 @@ const DragDrop = {
     this.draggedEl = null;
     this.dropZoneGhost = null;
     this.hoveredCard = null;
-    this.handInsertGhost = null;
-    this._handInsertIndex = null;
+    this.insertGhost = null;
+    this._insertIndex = null;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
 
@@ -183,34 +187,31 @@ const DragDrop = {
 
       const isSameZone = dropInfo && dropInfo.zone === zone;
       const isBattlefield = dropInfo && dropInfo.zone === "battlefield";
-      const isHand = dropInfo && dropInfo.zone === "hand";
+      const isListZone = dropInfo && dropInfo.zone in LIST_ZONES;
 
-      if (dropInfo && (!isSameZone || isBattlefield || isHand)) {
-        const zoneEl = document.querySelector(`[data-drop-zone="${dropInfo.zone}"]`);
-        if (zoneEl) {
-          const zoneRect = zoneEl.getBoundingClientRect();
-          const cardLeft = e.clientX - offsetX;
-          const cardTop = e.clientY - offsetY;
-          const relX = Math.max(0, Math.min(0.98, (cardLeft - zoneRect.left) / zoneRect.width));
-          const relY = Math.max(0, Math.min(0.98, (cardTop - zoneRect.top) / zoneRect.height));
+      if (dropInfo && (!isSameZone || isBattlefield || isListZone)) {
+        const zoneRect = dropInfo.el.getBoundingClientRect();
+        const cardLeft = e.clientX - offsetX;
+        const cardTop = e.clientY - offsetY;
+        const relX = Math.max(0, Math.min(0.98, (cardLeft - zoneRect.left) / zoneRect.width));
+        const relY = Math.max(0, Math.min(0.98, (cardTop - zoneRect.top) / zoneRect.height));
 
-          const insertIndex = dropInfo.zone === "hand" ? (this._handInsertIndex ?? null) : null;
-          this._handInsertIndex = null;
-          this.cleanupDragGhost();
+        const insertIndex = isListZone ? (this._insertIndex ?? null) : null;
+        this._insertIndex = null;
+        this.cleanupDragGhost();
 
-          this.pushEvent("drag_end", {
-            instance_id: instanceId,
-            from_zone: zone,
-            owner: owner,
-            target_zone: dropInfo.zone,
-            x: relX,
-            y: relY,
-            insert_index: insertIndex
-          });
-        }
+        this.pushEvent("drag_end", {
+          instance_id: instanceId,
+          from_zone: zone,
+          owner: owner,
+          target_zone: dropInfo.zone,
+          x: relX,
+          y: relY,
+          insert_index: insertIndex
+        });
       } else {
-        // No valid drop zone or dropped on same zone — restore
-        this._handInsertIndex = null;
+        // No valid drop zone or dropped on same non-list zone — restore
+        this._insertIndex = null;
         this.cleanupDragGhost();
         if (draggedEl) {
           draggedEl.style.display = "";
@@ -235,13 +236,59 @@ const DragDrop = {
       const rb = b.getBoundingClientRect();
       return (ra.width * ra.height) - (rb.width * rb.height);
     });
-    for (const zone of zones) {
-      const rect = zone.getBoundingClientRect();
+    for (const el of zones) {
+      const rect = el.getBoundingClientRect();
       if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-        return { zone: zone.dataset.dropZone };
+        return { zone: el.dataset.dropZone, el };
       }
     }
     return null;
+  },
+
+  // Show an insert-ghost indicator for horizontal list zones (hand, deck, graveyard, exile).
+  showInsertGhost(zoneName, zoneEl, x) {
+    // Cards are inside the inner flex wrapper (first child of the scroll container)
+    const innerEl = zoneEl.firstElementChild || zoneEl;
+    const cards = Array.from(innerEl.querySelectorAll("[data-draggable]"));
+
+    let insertAfterEl = null;
+    let insertIndex = 0;
+
+    for (let i = 0; i < cards.length; i++) {
+      const r = cards[i].getBoundingClientRect();
+      if (x > r.left + r.width / 2) {
+        insertAfterEl = cards[i];
+        insertIndex = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    this._insertIndex = insertIndex;
+
+    const ghostHeight = LIST_ZONES[zoneName] || 96;
+    const ghostSrc = this.dragging
+      ? (document.querySelector(`[data-instance-id="${this.dragging.instanceId}"]`)?.dataset?.cardImg || "")
+      : "";
+
+    this.insertGhost = document.createElement("img");
+    this.insertGhost.src = ghostSrc;
+    this.insertGhost.style.cssText = `
+      height: ${ghostHeight}px;
+      width: auto;
+      border-radius: 4px;
+      opacity: 0.4;
+      pointer-events: none;
+      flex-shrink: 0;
+      align-self: center;
+      outline: 2px solid rgba(167, 139, 250, 0.8);
+    `;
+
+    if (insertAfterEl) {
+      insertAfterEl.after(this.insertGhost);
+    } else {
+      innerEl.prepend(this.insertGhost);
+    }
   },
 
   updateDropZoneIndicator(x, y, fromZone) {
@@ -249,76 +296,34 @@ const DragDrop = {
       this.dropZoneGhost.remove();
       this.dropZoneGhost = null;
     }
-    if (this.handInsertGhost) {
-      this.handInsertGhost.remove();
-      this.handInsertGhost = null;
+    if (this.insertGhost) {
+      this.insertGhost.remove();
+      this.insertGhost = null;
     }
 
     const dropInfo = this.findDropZone(x, y);
     if (!dropInfo) return;
 
-    if (dropInfo.zone === "hand") {
-      // Show ghost card at insertion point
-      const handEl = document.querySelector('[data-drop-zone="hand"]');
-      if (handEl) {
-        const cards = Array.from(handEl.querySelectorAll("[data-draggable]"));
-        let insertAfterEl = null;
-        let insertIndex = 0;
-
-        for (let i = 0; i < cards.length; i++) {
-          const r = cards[i].getBoundingClientRect();
-          if (x > r.left + r.width / 2) {
-            insertAfterEl = cards[i];
-            insertIndex = i + 1;
-          } else {
-            break;
-          }
-        }
-
-        // Store for use on drop
-        this._handInsertIndex = insertIndex;
-
-        this.handInsertGhost = document.createElement("img");
-        this.handInsertGhost.src = this.dragging ? (document.querySelector(`[data-instance-id="${this.dragging.instanceId}"]`)?.dataset?.cardImg || "") : "";
-        this.handInsertGhost.style.cssText = `
-          height: 96px;
-          width: auto;
-          border-radius: 4px;
-          opacity: 0.4;
-          pointer-events: none;
-          flex-shrink: 0;
-          align-self: center;
-          outline: 2px solid rgba(167, 139, 250, 0.8);
-        `;
-        if (insertAfterEl) {
-          insertAfterEl.after(this.handInsertGhost);
-        } else {
-          // Prepend into the inner flex wrapper (first child), not the scroll container
-          const innerEl = handEl.firstElementChild || handEl;
-          innerEl.prepend(this.handInsertGhost);
-        }
-      }
+    if (dropInfo.zone in LIST_ZONES) {
+      this.showInsertGhost(dropInfo.zone, dropInfo.el, x);
       return;
     }
 
     if (dropInfo.zone !== "battlefield" && dropInfo.zone !== "opp-battlefield" && dropInfo.zone !== fromZone) {
-      const zoneEl = document.querySelector(`[data-drop-zone="${dropInfo.zone}"]`);
-      if (zoneEl) {
-        this.dropZoneGhost = document.createElement("div");
-        this.dropZoneGhost.style.cssText = `
-          position: absolute;
-          inset: 0;
-          border: 2px solid rgba(167, 139, 250, 0.8);
-          border-radius: 4px;
-          pointer-events: none;
-          background: rgba(167, 139, 250, 0.1);
-          z-index: 100;
-        `;
-        if (getComputedStyle(zoneEl).position === "static") {
-          zoneEl.style.position = "relative";
-        }
-        zoneEl.appendChild(this.dropZoneGhost);
+      this.dropZoneGhost = document.createElement("div");
+      this.dropZoneGhost.style.cssText = `
+        position: absolute;
+        inset: 0;
+        border: 2px solid rgba(167, 139, 250, 0.8);
+        border-radius: 4px;
+        pointer-events: none;
+        background: rgba(167, 139, 250, 0.1);
+        z-index: 100;
+      `;
+      if (getComputedStyle(dropInfo.el).position === "static") {
+        dropInfo.el.style.position = "relative";
       }
+      dropInfo.el.appendChild(this.dropZoneGhost);
     }
   },
 
@@ -331,9 +336,9 @@ const DragDrop = {
       this.dropZoneGhost.remove();
       this.dropZoneGhost = null;
     }
-    if (this.handInsertGhost) {
-      this.handInsertGhost.remove();
-      this.handInsertGhost = null;
+    if (this.insertGhost) {
+      this.insertGhost.remove();
+      this.insertGhost = null;
     }
     // draggedEl intentionally left for the caller to handle
   },

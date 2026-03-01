@@ -39,33 +39,39 @@ defmodule Goodtap.GameEngine.Actions do
     end
   end
 
+  # ─── Reorder Within Zone ──────────────────────────────────────────────────
+
+  # Generic reorder for any list zone (hand, deck, graveyard, exile).
+  # insert_index is the desired position *before* removal, so we adjust for
+  # the gap left by removing the card.
+  def reorder_in_zone(state, player, zone, instance_id, insert_index) do
+    cards = get_in(state, [player, "zones", zone]) || []
+    original_index = Enum.find_index(cards, fn c -> c["instance_id"] == instance_id end)
+
+    with {:ok, {card, state}} <- remove_from_zone(state, player, zone, instance_id) do
+      adjusted =
+        if is_integer(original_index) && is_integer(insert_index) &&
+             original_index < insert_index do
+          insert_index - 1
+        else
+          insert_index
+        end
+
+      {:ok, insert_into_zone(state, player, zone, card, adjusted)}
+    end
+  end
+
   # ─── Move to Hand ─────────────────────────────────────────────────────────
 
   def move_to_hand(state, player, instance_id, source_zone, insert_index \\ nil) do
-    # When reordering within the hand, find the original index before removal
-    # so we can adjust the target index after the card is removed
-    original_hand_index =
-      if source_zone == "hand" && is_integer(insert_index) do
-        hand = get_in(state, [player, "zones", "hand"]) || []
-        Enum.find_index(hand, fn c -> c["instance_id"] == instance_id end)
-      end
-
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       card = Map.put(card, "tapped", false)
 
       if card["is_token"] do
         {:ok, state}
       else
-        adjusted_index =
-          if is_integer(insert_index) && is_integer(original_hand_index) &&
-               original_hand_index < insert_index do
-            insert_index - 1
-          else
-            insert_index
-          end
-
-        if is_integer(adjusted_index) do
-          {:ok, insert_into_zone(state, player, "hand", card, adjusted_index)}
+        if is_integer(insert_index) do
+          {:ok, insert_into_zone(state, player, "hand", card, insert_index)}
         else
           {:ok, append_to_zone(state, player, "hand", card)}
         end

@@ -298,38 +298,47 @@ defmodule GoodtapWeb.GameLive do
     if owner != socket.assigns.my_role do
       {:noreply, socket}
     else
+      insert_index = case params["insert_index"] do
+        nil -> nil
+        idx -> trunc(idx)
+      end
+
       socket =
-        case target_zone do
-          "battlefield" when from_zone == "battlefield" ->
+        case {from_zone, target_zone} do
+          # Battlefield reposition (same zone)
+          {"battlefield", "battlefield"} ->
             apply_action_inline(socket, fn state, player ->
               Actions.update_battlefield_position(state, player, instance_id, x, y)
             end)
 
-          "battlefield" ->
+          # Same list-zone reorder
+          {zone, zone} when zone in ["hand", "deck", "graveyard", "exile"] ->
+            apply_action_inline(socket, fn state, player ->
+              Actions.reorder_in_zone(state, player, zone, instance_id, insert_index || 0)
+            end)
+
+          # Cross-zone moves
+          {_, "battlefield"} ->
             apply_action_inline(socket, fn state, player ->
               Actions.move_to_battlefield(state, player, instance_id, from_zone, x, y)
             end)
 
-          "graveyard" ->
+          {_, "graveyard"} ->
             apply_action_inline(socket, fn state, player ->
               Actions.move_to_graveyard(state, player, instance_id, from_zone)
             end)
 
-          "exile" ->
+          {_, "exile"} ->
             apply_action_inline(socket, fn state, player ->
               Actions.move_to_exile(state, player, instance_id, from_zone)
             end)
 
-          "hand" ->
-            insert_index = case params["insert_index"] do
-              nil -> nil
-              idx -> trunc(idx)
-            end
+          {_, "hand"} ->
             apply_action_inline(socket, fn state, player ->
               Actions.move_to_hand(state, player, instance_id, from_zone, insert_index)
             end)
 
-          "deck" ->
+          {_, "deck"} ->
             apply_action_inline(socket, fn state, player ->
               Actions.move_to_deck_top(state, player, instance_id, from_zone)
             end)
@@ -338,7 +347,15 @@ defmodule GoodtapWeb.GameLive do
             socket
         end
 
-      {:noreply, assign(socket, open_zone: nil)}
+      # Keep the zone popup open when reordering within the same zone,
+      # close it when a card is moved out.
+      open_zone =
+        case socket.assigns.open_zone do
+          {owner, zone} when zone == target_zone and owner == socket.assigns.my_role -> {owner, zone}
+          _ -> nil
+        end
+
+      {:noreply, assign(socket, open_zone: open_zone)}
     end
   end
 
@@ -873,7 +890,7 @@ defmodule GoodtapWeb.GameLive do
           class="flex items-center bg-gray-900 border-t border-gray-700 overflow-x-auto shrink-0"
           style="height: 120px;"
         >
-          <div class="flex items-center gap-1 px-4 py-2 justify-center min-w-full">
+          <div class="flex items-center gap-1 px-4 py-2 min-w-max mx-auto">
             <%= for card <- zone_cards(@my, "hand") do %>
               <div
                 id={"hand-card-#{card["instance_id"]}"}
@@ -914,8 +931,9 @@ defmodule GoodtapWeb.GameLive do
           <div
             class="flex overflow-x-auto"
             style="height: 148px;"
+            data-drop-zone={elem(@open_zone, 1)}
           >
-            <div class="flex items-center gap-2 px-4 py-2 justify-center min-w-full">
+            <div class="flex items-center gap-2 px-4 py-2 min-w-max mx-auto">
               <%= for card <- zone_cards(
                 if(elem(@open_zone, 0) == @my_role, do: @my, else: @opp),
                 elem(@open_zone, 1)
