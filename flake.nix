@@ -5,13 +5,20 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       pkgsFor = system: nixpkgs.legacyPackages.${system};
 
-      makePackage = system:
+      makePackage =
+        system:
         let
           pkgs = pkgsFor system;
           beamPkgs = pkgs.beam.packages.erlang_27;
@@ -23,7 +30,7 @@
             src = ./.;
             # Run `nix build .#packages.x86_64-linux.default` once with this
             # placeholder; Nix will print the correct hash in the error output.
-            hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+            hash = "sha256-2LgbPhjEucvI7zcNtVNC0PIpCmDIwToBKyKElwxRkOE=";
           };
         in
         beamPkgs.mixRelease {
@@ -49,7 +56,8 @@
         default = makePackage system;
       });
 
-      devShells = forAllSystems (system:
+      devShells = forAllSystems (
+        system:
         let
           pkgs = pkgsFor system;
           beamPkgs = pkgs.beam.packages.erlang_27;
@@ -63,7 +71,8 @@
               pkgs.nodejs_22
               pkgs.tailwindcss
               pkgs.esbuild
-            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.inotify-tools ];
+            ]
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.inotify-tools ];
           };
         }
       );
@@ -71,7 +80,13 @@
       # -----------------------------------------------------------------------
       # NixOS module — import this in any NixOS configuration
       # -----------------------------------------------------------------------
-      nixosModules.default = { config, lib, pkgs, ... }:
+      nixosModules.default =
+        {
+          config,
+          lib,
+          pkgs,
+          ...
+        }:
         with lib;
         let
           cfg = config.services.goodtap;
@@ -117,10 +132,12 @@
             services.postgresql = {
               enable = true;
               ensureDatabases = [ "goodtap" ];
-              ensureUsers = [{
-                name = "goodtap";
-                ensureDBOwnership = true;
-              }];
+              ensureUsers = [
+                {
+                  name = "goodtap";
+                  ensureDBOwnership = true;
+                }
+              ];
               # Allow the goodtap OS user to connect via localhost without a password.
               # Only processes running as the goodtap system user can trigger these
               # rules (TCP to 127.0.0.1), so this is safe for a single-host setup.
@@ -140,7 +157,10 @@
 
             systemd.services.goodtap = {
               description = "GoodTap Phoenix Application";
-              after = [ "network.target" "postgresql.service" ];
+              after = [
+                "network.target"
+                "postgresql.service"
+              ];
               requires = [ "postgresql.service" ];
               wantedBy = [ "multi-user.target" ];
 
@@ -193,11 +213,12 @@
       # -----------------------------------------------------------------------
       nixosConfigurations.goodtap = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
-        modules =
-          [
-            self.nixosModules.default
+        modules = [
+          self.nixosModules.default
 
-            ({ pkgs, lib, ... }: {
+          (
+            { pkgs, lib, ... }:
+            {
               services.goodtap = {
                 enable = true;
                 host = "yourdomain.com"; # <-- change this
@@ -217,20 +238,23 @@
               # };
 
               networking.hostName = "goodtap";
-              networking.firewall.allowedTCPPorts = [ 80 443 4000 ];
+              networking.firewall.allowedTCPPorts = [
+                80
+                443
+                4000
+              ];
 
               # Enable SSH so you can reach the box after deploy
               services.openssh.enable = true;
 
               system.stateVersion = "24.11";
-            })
-          ]
-          # hardware-configuration.nix is machine-specific — generate it on
-          # your server with: nixos-generate-config --show-hardware-config
-          # then save it as ./hardware-configuration.nix in this repo.
-          ++ nixpkgs.lib.optional
-            (builtins.pathExists ./hardware-configuration.nix)
-            ./hardware-configuration.nix;
+            }
+          )
+        ]
+        # hardware-configuration.nix is machine-specific — generate it on
+        # your server with: nixos-generate-config --show-hardware-config
+        # then save it as ./hardware-configuration.nix in this repo.
+        ++ nixpkgs.lib.optional (builtins.pathExists ./hardware-configuration.nix) ./hardware-configuration.nix;
       };
     };
 }
