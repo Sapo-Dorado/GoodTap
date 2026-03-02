@@ -79,12 +79,15 @@ echo "SECRET_KEY_BASE=$(openssl rand -hex 64)" > /tmp/goodtap-secrets/etc/goodta
 chmod 600 /tmp/goodtap-secrets/etc/goodtap/secrets
 
 nix run github:nix-community/nixos-anywhere -- \
+  --build-on-remote \
   --extra-files /tmp/goodtap-secrets \
   --flake .#goodtap \
   root@<server-ip>
 
 rm -rf /tmp/goodtap-secrets
 ```
+
+> **macOS users:** `--build-on-remote` is required when deploying from a Mac, since Nix cannot natively build Linux derivations locally. nixos-anywhere boots a minimal NixOS environment on the server via kexec and runs the build there instead.
 
 nixos-anywhere will partition the disk, install NixOS, copy the secrets file, and reboot. On first boot NixOS will:
 
