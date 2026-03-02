@@ -235,7 +235,7 @@
             {
               # ---- Disk layout (disko — used by nixos-anywhere to partition the disk) ----
               disko.devices.disk.main = {
-                device = "/dev/vda";
+                device = "/dev/sda";
                 type = "disk";
                 content = {
                   type = "gpt";
