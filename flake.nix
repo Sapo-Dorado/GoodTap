@@ -3,10 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, disko }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -200,61 +204,112 @@
       # Example NixOS host configuration
       #
       # Deployment workflow:
-      #   1. Boot the server into NixOS minimal installer (or existing NixOS)
-      #   2. Generate hardware config and save it here:
-      #        nixos-generate-config --show-hardware-config > hardware-configuration.nix
-      #   3. Edit the options below (host, etc.)
-      #   4. Create the secrets file on the server:
-      #        mkdir -p /etc/goodtap
-      #        echo "SECRET_KEY_BASE=$(openssl rand -hex 64)" > /etc/goodtap/secrets
-      #        chmod 600 /etc/goodtap/secrets
-      #   5. Deploy (from your local machine or from the server):
-      #        nixos-rebuild switch --flake .#goodtap [--target-host root@<server-ip>]
+      #   1. Edit domain, acmeEmail, and sshKey below           <-- you must do this
+      #   2. Create the secrets file on the server after deploy:
+      #        ssh root@<server-ip> "mkdir -p /etc/goodtap && \
+      #          echo SECRET_KEY_BASE=$(openssl rand -hex 64) > /etc/goodtap/secrets && \
+      #          chmod 600 /etc/goodtap/secrets"
+      #   3. Point your domain's DNS A record to the server IP
+      #   4. Run nixos-anywhere from your local machine:
+      #        nix run github:nix-community/nixos-anywhere -- --flake .#goodtap root@<server-ip>
+      #   5. Future updates (after initial install):
+      #        nixos-rebuild switch --flake .#goodtap --target-host root@<server-ip>
       # -----------------------------------------------------------------------
       nixosConfigurations.goodtap = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [
+          disko.nixosModules.disko
           self.nixosModules.default
 
           (
             { pkgs, lib, ... }:
+            let
+              domain = "yourdomain.com";    # <-- set your domain here
+              acmeEmail = "you@example.com"; # <-- Let's Encrypt notifications
+              sshKey = "ssh-ed25519 AAAA..."; # <-- your public SSH key (ssh-keygen -t ed25519)
+            in
             {
+              # ---- Disk layout (disko — used by nixos-anywhere to partition the disk) ----
+              disko.devices.disk.main = {
+                device = "/dev/vda";
+                type = "disk";
+                content = {
+                  type = "gpt";
+                  partitions = {
+                    ESP = {
+                      size = "512M";
+                      type = "EF00"; # EFI System Partition
+                      content = {
+                        type = "filesystem";
+                        format = "vfat";
+                        mountpoint = "/boot";
+                      };
+                    };
+                    swap = {
+                      size = "2G";
+                      content.type = "swap";
+                    };
+                    root = {
+                      size = "100%";
+                      content = {
+                        type = "filesystem";
+                        format = "ext4";
+                        mountpoint = "/";
+                      };
+                    };
+                  };
+                };
+              };
+
+              # ---- Bootloader ----
+              boot.loader.systemd-boot.enable = true;
+              boot.loader.efi.canTouchEfiVariables = true;
+
+              # ---- SSH access ----
+              users.users.root.openssh.authorizedKeys.keys = [ sshKey ];
+
+              # ---- Application ----
               services.goodtap = {
                 enable = true;
-                host = "yourdomain.com"; # <-- change this
-                # Create on the server: see step 4 above
+                host = domain;
                 secretsFile = "/etc/goodtap/secrets";
               };
 
-              # Optional: nginx reverse proxy
-              # services.nginx = {
-              #   enable = true;
-              #   virtualHosts."yourdomain.com" = {
-              #     locations."/" = {
-              #       proxyPass = "http://127.0.0.1:4000";
-              #       proxyWebsockets = true;
-              #     };
-              #   };
-              # };
+              # ---- nginx reverse proxy (terminates SSL, forwards to Phoenix :4000) ----
+              services.nginx = {
+                enable = true;
+                recommendedProxySettings = true;
+                recommendedTlsSettings = true;
+                recommendedGzipSettings = true;
+                recommendedOptimisation = true;
+
+                virtualHosts.${domain} = {
+                  enableACME = true; # automatic Let's Encrypt cert
+                  forceSSL = true;   # redirect HTTP → HTTPS
+
+                  locations."/" = {
+                    proxyPass = "http://127.0.0.1:4000";
+                    proxyWebsockets = true; # required for LiveView
+                  };
+                };
+              };
+
+              # ---- Let's Encrypt (cert renewal handled automatically by systemd timer) ----
+              security.acme = {
+                acceptTerms = true;
+                defaults.email = acmeEmail;
+              };
 
               networking.hostName = "goodtap";
-              networking.firewall.allowedTCPPorts = [
-                80
-                443
-                4000
-              ];
+              # Port 4000 not exposed — nginx is the only public entry point
+              networking.firewall.allowedTCPPorts = [ 22 80 443 ];
 
-              # Enable SSH so you can reach the box after deploy
               services.openssh.enable = true;
 
               system.stateVersion = "24.11";
             }
           )
-        ]
-        # hardware-configuration.nix is machine-specific — generate it on
-        # your server with: nixos-generate-config --show-hardware-config
-        # then save it as ./hardware-configuration.nix in this repo.
-        ++ nixpkgs.lib.optional (builtins.pathExists ./hardware-configuration.nix) ./hardware-configuration.nix;
+        ];
       };
     };
 }
