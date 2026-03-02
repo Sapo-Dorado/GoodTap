@@ -10,7 +10,11 @@
   };
 
   outputs =
-    { self, nixpkgs, disko }:
+    {
+      self,
+      nixpkgs,
+      disko,
+    }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -224,9 +228,9 @@
           (
             { pkgs, lib, ... }:
             let
-              domain = "yourdomain.com";    # <-- set your domain here
-              acmeEmail = "you@example.com"; # <-- Let's Encrypt notifications
-              sshKey = "ssh-ed25519 AAAA..."; # <-- your public SSH key (ssh-keygen -t ed25519)
+              domain = "goodtap.in";
+              acmeEmail = "sapodorado@proton.me";
+              sshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKW8DZZYK2k5aOg8f/dfscXLG9bOLLzTU/6h8uWP5Rrw";
             in
             {
               # ---- Disk layout (disko — used by nixos-anywhere to partition the disk) ----
@@ -285,7 +289,7 @@
 
                 virtualHosts.${domain} = {
                   enableACME = true; # automatic Let's Encrypt cert
-                  forceSSL = true;   # redirect HTTP → HTTPS
+                  forceSSL = true; # redirect HTTP → HTTPS
 
                   locations."/" = {
                     proxyPass = "http://127.0.0.1:4000";
@@ -302,7 +306,11 @@
 
               networking.hostName = "goodtap";
               # Port 4000 not exposed — nginx is the only public entry point
-              networking.firewall.allowedTCPPorts = [ 22 80 443 ];
+              networking.firewall.allowedTCPPorts = [
+                22
+                80
+                443
+              ];
 
               services.openssh.enable = true;
 
