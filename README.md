@@ -15,108 +15,106 @@ Or inside IEx:
 iex -S mix phx.server
 ```
 
-## Production deployment (NixOS)
+## Production deployment
 
-The repo includes a Nix flake that builds the app and manages PostgreSQL as a persistent systemd service. Everything runs on a single NixOS host.
+The repo includes a Nix flake that builds the app and manages the full stack as a single NixOS host:
+
+- **PostgreSQL** — managed as a systemd service, data persisted in `/var/lib/postgresql`
+- **GoodTap** — Phoenix release built by Nix, runs as a systemd service on port 4000
+- **nginx** — reverse proxy on ports 80/443, terminates SSL (port 4000 is not publicly exposed)
+- **Let's Encrypt** — TLS certificates issued and renewed automatically via ACME
+
+The initial deploy uses [nixos-anywhere](https://github.com/nix-community/nixos-anywhere) to install NixOS onto any fresh Linux server. Subsequent deploys use `nixos-rebuild switch`.
 
 ### Prerequisites
 
-- A server running NixOS (or installed via [nixos-anywhere](https://github.com/nix-community/nixos-anywhere))
+- A fresh VPS/server (any Linux — nixos-anywhere will replace the OS). Must have `/dev/vda` as the primary disk.
 - Nix with flakes enabled on your local machine
-- SSH access to the server
+- SSH root access to the server
+- A domain name
 
-### 1. Generate the hardware configuration
+### 1. Configure the flake
 
-On the server, run:
-
-```bash
-nixos-generate-config --show-hardware-config > hardware-configuration.nix
-```
-
-Add the file to the repo root (it is `.gitignore`-able if you prefer to keep it local).
-
-### 2. Configure the flake
-
-Edit `flake.nix` and update the `nixosConfigurations.goodtap` block:
+Edit the three variables at the top of the `nixosConfigurations.goodtap` block in `flake.nix`:
 
 ```nix
-services.goodtap = {
-  enable = true;
-  host = "yourdomain.com";  # <-- your actual hostname
-  secretsFile = "/etc/goodtap/secrets";
-};
+domain    = "yourdomain.com";       # your domain
+acmeEmail = "you@example.com";      # email for Let's Encrypt notifications
+sshKey    = "ssh-ed25519 AAAA...";  # your public SSH key (cat ~/.ssh/id_ed25519.pub)
 ```
+
+### 2. Point DNS to your server
+
+Add an A record at your DNS provider:
+
+| Type | Name | Value |
+|------|------|-------|
+| `A` | `yourdomain.com` | `<server IP>` |
+
+Use a short TTL (e.g. 300s) so changes propagate quickly. Verify it has propagated before deploying:
+
+```bash
+dig yourdomain.com A +short
+```
+
+DNS must resolve to your server before nixos-anywhere runs, otherwise the Let's Encrypt certificate issuance will fail.
 
 ### 3. Get the deps hash
 
-The `fetchMixDeps` derivation needs a content hash. Run a build once with the placeholder hash and copy the value from the error output:
+The `fetchMixDeps` derivation needs a content hash. Run a build once with the placeholder and copy the value from the error:
 
 ```bash
 nix build .#packages.x86_64-linux.default 2>&1 | grep "got:"
 ```
 
-Replace the `hash = "sha256-AAA..."` line in `flake.nix` with the printed hash, then re-run the build to confirm it succeeds.
+Replace the `hash = "sha256-AAA..."` line in `flake.nix` with the printed value, then re-run to confirm it succeeds.
 
-### 4. Create the secrets file on the server
+### 4. Generate a secret and deploy
 
-```bash
-mkdir -p /etc/goodtap
-echo "SECRET_KEY_BASE=$(openssl rand -hex 64)" > /etc/goodtap/secrets
-chmod 600 /etc/goodtap/secrets
-```
-
-The file uses systemd `EnvironmentFile` format (`KEY=VALUE`, one per line). Add any other runtime secrets here (e.g. API keys).
-
-### 5. Deploy
-
-From the server itself:
+Stage the secrets file locally, then pass it to nixos-anywhere via `--extra-files` so it is in place before the app first starts:
 
 ```bash
-nixos-rebuild switch --flake .#goodtap
+mkdir -p /tmp/goodtap-secrets/etc/goodtap
+echo "SECRET_KEY_BASE=$(openssl rand -hex 64)" > /tmp/goodtap-secrets/etc/goodtap/secrets
+chmod 600 /tmp/goodtap-secrets/etc/goodtap/secrets
+
+nix run github:nix-community/nixos-anywhere -- \
+  --extra-files /tmp/goodtap-secrets \
+  --flake .#goodtap \
+  root@<server-ip>
+
+rm -rf /tmp/goodtap-secrets
 ```
 
-Or remotely from your local machine:
+nixos-anywhere will partition the disk, install NixOS, copy the secrets file, and reboot. On first boot NixOS will:
+
+1. Start PostgreSQL and create the `goodtap` database and user
+2. Start nginx and obtain a Let's Encrypt TLS certificate
+3. Run database migrations
+4. Start the GoodTap service
+
+Your app will be live at `https://yourdomain.com`.
+
+### Subsequent deploys
 
 ```bash
 nixos-rebuild switch --flake .#goodtap --target-host root@<server-ip>
 ```
 
-On first deploy NixOS will:
-
-1. Install and start PostgreSQL (data stored in `/var/lib/postgresql`)
-2. Create the `goodtap` database and user
-3. Build and install the Phoenix release
-4. Run database migrations
-5. Start the `goodtap` systemd service
-
-Subsequent deploys follow the same command. Migrations run automatically on each restart.
-
-### Optional: nginx reverse proxy
-
-Uncomment and configure the nginx block in `flake.nix`:
-
-```nix
-services.nginx = {
-  enable = true;
-  virtualHosts."yourdomain.com" = {
-    locations."/" = {
-      proxyPass = "http://127.0.0.1:4000";
-      proxyWebsockets = true;
-    };
-  };
-};
-```
+Migrations run automatically on each restart.
 
 ### Useful commands on the server
 
 ```bash
 # Check service status
 systemctl status goodtap
+systemctl status nginx
 
 # View logs
 journalctl -u goodtap -f
+journalctl -u nginx -f
 
-# Run a one-off migration manually
+# Run a migration manually
 /run/current-system/sw/bin/goodtap eval 'Goodtap.Release.migrate()'
 
 # Connect to the database
