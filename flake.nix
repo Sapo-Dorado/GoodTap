@@ -38,7 +38,7 @@
             src = ./.;
             # Run `nix build .#packages.x86_64-linux.default` once with this
             # placeholder; Nix will print the correct hash in the error output.
-            hash = "sha256-2LgbPhjEucvI7zcNtVNC0PIpCmDIwToBKyKElwxRkOE=";
+            hash = "sha256-hTmfuLL0eTPtDQt7GdusTHxgTeGk8O4/cO26TsfuKuA=";
           };
         in
         beamPkgs.mixRelease {
