@@ -47,13 +47,14 @@
           src = ./.;
           inherit elixir mixFodDeps;
 
-          nativeBuildInputs = [ pkgs.git ];
+          nativeBuildInputs = [ pkgs.git pkgs.cacert ];
 
           # The mix esbuild/tailwind packages respect these env vars instead of
           # downloading binaries, letting us use Nix-provided versions.
           postBuild = ''
             export TAILWIND_PATH=${pkgs.tailwindcss}/bin/tailwindcss
             export ESBUILD_PATH=${pkgs.esbuild}/bin/esbuild
+            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             mix do assets.deploy, phx.digest
           '';
         };
