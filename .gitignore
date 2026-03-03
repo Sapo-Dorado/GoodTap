@@ -36,4 +36,4 @@ goodtap-*.tar
 npm-debug.log
 /assets/node_modules/
 
-/result/
+/result
