@@ -9,24 +9,14 @@
     };
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      disko,
-    }:
+  outputs = { self, nixpkgs, disko, }:
     let
-      supportedSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
-      ];
+      supportedSystems =
+        [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       pkgsFor = system: nixpkgs.legacyPackages.${system};
 
-      makePackage =
-        system:
+      makePackage = system:
         let
           pkgs = pkgsFor system;
           beamPkgs = pkgs.beam.packages.erlang_27;
@@ -41,13 +31,23 @@
             hash = "sha256-hTmfuLL0eTPtDQt7GdusTHxgTeGk8O4/cO26TsfuKuA=";
           };
 
-          tailwindcss = pkgs.fetchurl {
-            url = "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.12/tailwindcss-linux-x64";
-            hash = "sha256-z468Ih3of2RM2uHMT+bTDVjA4A6ui2WU44f4hQ/VABE=";
-            executable = true;
+          tailwindcss = let
+            src = pkgs.fetchurl {
+              url =
+                "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.12/tailwindcss-linux-x64";
+              hash = "sha256-Xu7mbqI36umhYPozFP0M92q5k1Uamfr7Fvodtsa5Aok=";
+            };
+          in pkgs.stdenv.mkDerivation {
+            name = "tailwindcss-4.1.12";
+            dontUnpack = true;
+            nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            installPhase = ''
+              mkdir -p $out/bin
+              cp ${src} $out/bin/tailwindcss
+              chmod +x $out/bin/tailwindcss
+            '';
           };
-        in
-        beamPkgs.mixRelease {
+        in beamPkgs.mixRelease {
           pname = "goodtap";
           version = "0.1.0";
           src = ./.;
@@ -58,25 +58,21 @@
           # The mix esbuild/tailwind packages respect these env vars instead of
           # downloading binaries, letting us use Nix-provided versions.
           postBuild = ''
-            export TAILWIND_PATH=${tailwindcss}
+            export TAILWIND_PATH=${tailwindcss}/bin/tailwindcss
             export ESBUILD_PATH=${pkgs.esbuild}/bin/esbuild
+            mkdir -p priv/static/assets/css priv/static/assets/js
             mix do assets.deploy, phx.digest
           '';
         };
 
-    in
-    {
-      packages = forAllSystems (system: {
-        default = makePackage system;
-      });
+    in {
+      packages = forAllSystems (system: { default = makePackage system; });
 
-      devShells = forAllSystems (
-        system:
+      devShells = forAllSystems (system:
         let
           pkgs = pkgsFor system;
           beamPkgs = pkgs.beam.packages.erlang_27;
-        in
-        {
+        in {
           default = pkgs.mkShell {
             buildInputs = [
               beamPkgs.elixir_1_18
@@ -85,28 +81,19 @@
               pkgs.nodejs_22
               pkgs.tailwindcss
               pkgs.esbuild
-            ]
-            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.inotify-tools ];
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.inotify-tools ];
           };
-        }
-      );
+        });
 
       # -----------------------------------------------------------------------
       # NixOS module — import this in any NixOS configuration
       # -----------------------------------------------------------------------
-      nixosModules.default =
-        {
-          config,
-          lib,
-          pkgs,
-          ...
-        }:
+      nixosModules.default = { config, lib, pkgs, ... }:
         with lib;
         let
           cfg = config.services.goodtap;
           goodtap = self.packages.${pkgs.system}.default;
-        in
-        {
+        in {
           options.services.goodtap = {
             enable = mkEnableOption "GoodTap Phoenix application";
 
@@ -119,7 +106,8 @@
             host = mkOption {
               type = types.str;
               default = "localhost";
-              description = "Public hostname used for URL generation (PHX_HOST).";
+              description =
+                "Public hostname used for URL generation (PHX_HOST).";
             };
 
             secretsFile = mkOption {
@@ -137,7 +125,8 @@
               type = types.path;
               default = "/var/lib/goodtap";
               readOnly = true;
-              description = "Runtime state directory (tmp files, uploads, etc.).";
+              description =
+                "Runtime state directory (tmp files, uploads, etc.).";
             };
           };
 
@@ -146,12 +135,10 @@
             services.postgresql = {
               enable = true;
               ensureDatabases = [ "goodtap" ];
-              ensureUsers = [
-                {
-                  name = "goodtap";
-                  ensureDBOwnership = true;
-                }
-              ];
+              ensureUsers = [{
+                name = "goodtap";
+                ensureDBOwnership = true;
+              }];
               # Allow the goodtap OS user to connect via localhost without a password.
               # Only processes running as the goodtap system user can trigger these
               # rules (TCP to 127.0.0.1), so this is safe for a single-host setup.
@@ -171,10 +158,7 @@
 
             systemd.services.goodtap = {
               description = "GoodTap Phoenix Application";
-              after = [
-                "network.target"
-                "postgresql.service"
-              ];
+              after = [ "network.target" "postgresql.service" ];
               requires = [ "postgresql.service" ];
               wantedBy = [ "multi-user.target" ];
 
@@ -196,7 +180,8 @@
                 # Secrets (SECRET_KEY_BASE, etc.) are loaded from this file
                 EnvironmentFile = cfg.secretsFile;
                 # Run DB migrations before starting the server
-                ExecStartPre = "${goodtap}/bin/goodtap eval 'Goodtap.Release.migrate()'";
+                ExecStartPre =
+                  "${goodtap}/bin/goodtap eval 'Goodtap.Release.migrate()'";
                 ExecStart = "${goodtap}/bin/goodtap start";
                 Restart = "on-failure";
                 RestartSec = "5s";
@@ -231,14 +216,13 @@
           disko.nixosModules.disko
           self.nixosModules.default
 
-          (
-            { pkgs, lib, ... }:
+          ({ pkgs, lib, ... }:
             let
               domain = "goodtap.in";
               acmeEmail = "sapodorado@proton.me";
-              sshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKW8DZZYK2k5aOg8f/dfscXLG9bOLLzTU/6h8uWP5Rrw";
-            in
-            {
+              sshKey =
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKW8DZZYK2k5aOg8f/dfscXLG9bOLLzTU/6h8uWP5Rrw";
+            in {
               # ---- Disk layout (disko — used by nixos-anywhere to partition the disk) ----
               disko.devices.disk.main = {
                 device = "/dev/sda";
@@ -312,17 +296,12 @@
 
               networking.hostName = "goodtap";
               # Port 4000 not exposed — nginx is the only public entry point
-              networking.firewall.allowedTCPPorts = [
-                22
-                80
-                443
-              ];
+              networking.firewall.allowedTCPPorts = [ 22 80 443 ];
 
               services.openssh.enable = true;
 
               system.stateVersion = "24.11";
-            }
-          )
+            })
         ];
       };
     };
