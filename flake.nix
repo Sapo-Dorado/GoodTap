@@ -36,9 +36,10 @@
             pname = "goodtap-deps";
             version = "0.1.0";
             src = ./.;
+            MIX_ENV = "prod";
             # Run `nix build .#packages.x86_64-linux.default` once with this
             # placeholder; Nix will print the correct hash in the error output.
-            hash = "sha256-2LgbPhjEucvI7zcNtVNC0PIpCmDIwToBKyKElwxRkOE=";
+            hash = "";
           };
         in
         beamPkgs.mixRelease {
