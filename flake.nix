@@ -40,6 +40,12 @@
             # placeholder; Nix will print the correct hash in the error output.
             hash = "sha256-hTmfuLL0eTPtDQt7GdusTHxgTeGk8O4/cO26TsfuKuA=";
           };
+
+          tailwindcss = pkgs.fetchurl {
+            url = "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.12/tailwindcss-linux-x64";
+            hash = "sha256-z468Ih3of2RM2uHMT+bTDVjA4A6ui2WU44f4hQ/VABE=";
+            executable = true;
+          };
         in
         beamPkgs.mixRelease {
           pname = "goodtap";
@@ -47,14 +53,13 @@
           src = ./.;
           inherit elixir mixFodDeps;
 
-          nativeBuildInputs = [ pkgs.git pkgs.cacert ];
+          nativeBuildInputs = [ pkgs.git ];
 
           # The mix esbuild/tailwind packages respect these env vars instead of
           # downloading binaries, letting us use Nix-provided versions.
           postBuild = ''
-            export TAILWIND_PATH=${pkgs.tailwindcss}/bin/tailwindcss
+            export TAILWIND_PATH=${tailwindcss}
             export ESBUILD_PATH=${pkgs.esbuild}/bin/esbuild
-            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
             mix do assets.deploy, phx.digest
           '';
         };
