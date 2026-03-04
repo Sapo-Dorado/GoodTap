@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Run this from the NixOS installer after disko has partitioned the disk
-# and nixos-install has completed, but BEFORE rebooting.
+# Run this from the NixOS installer after nixos-install completes, before rebooting.
 # Usage: bash diagnose-boot.sh
-
-set -euo pipefail
 
 echo "====== lsblk ======"
 lsblk -o NAME,PARTLABEL,PARTUUID,UUID,FSTYPE,SIZE,MOUNTPOINT
@@ -13,63 +10,57 @@ echo "====== /dev/disk/by-partlabel/ ======"
 ls -la /dev/disk/by-partlabel/ 2>/dev/null || echo "MISSING"
 
 echo ""
-echo "====== /dev/disk/by-uuid/ ======"
-ls -la /dev/disk/by-uuid/ 2>/dev/null || echo "MISSING"
+echo "====== fstab (correct: from installed Nix store) ======"
+find /mnt/nix/store -maxdepth 2 -name "etc-fstab" 2>/dev/null | while read f; do
+  echo "--- $f ---"
+  cat "$f"
+done
 
 echo ""
-echo "====== fstab (via symlink chain) ======"
-FSTAB=$(readlink -f /mnt/etc/fstab 2>/dev/null || echo "")
-if [ -n "$FSTAB" ] && [ -f "$FSTAB" ]; then
-  cat "$FSTAB"
-else
-  # Try finding it in the store
-  FSTAB_STORE=$(find /mnt/nix/store -maxdepth 3 -name "etc-fstab" 2>/dev/null | head -1)
-  if [ -n "$FSTAB_STORE" ]; then
-    cat "$FSTAB_STORE"
-  else
-    echo "NOT FOUND"
-  fi
-fi
+echo "====== /mnt/etc/static/fstab (what the booted system will use) ======"
+STATIC=$(readlink -f /mnt/etc/static 2>/dev/null || echo "")
+echo "static points to: $STATIC"
+cat /mnt/etc/static/fstab 2>/dev/null || echo "NOT READABLE (symlink broken from outside chroot — expected)"
+# Try resolving manually via /mnt
+STATIC_MNT="/mnt${STATIC}"
+echo "trying via /mnt: $STATIC_MNT/fstab"
+cat "$STATIC_MNT/fstab" 2>/dev/null || echo "also not found via /mnt"
 
 echo ""
-echo "====== grub.cfg ======"
-cat /mnt/boot/grub/grub.cfg 2>/dev/null || echo "NOT FOUND"
+echo "====== initrd path and modules ======"
+INITRD_PATH=$(grep -o '/nix/store/[^ ]*/initrd' /mnt/boot/grub/grub.cfg | head -1)
+echo "initrd path from grub.cfg: $INITRD_PATH"
+INITRD="/mnt${INITRD_PATH}"
+echo "looking at: $INITRD"
 
-echo ""
-echo "====== initrd kernel modules ======"
-INITRD=$(ls /mnt/boot/initrd 2>/dev/null || ls /mnt/boot/initrd-* 2>/dev/null | head -1 || echo "")
-if [ -n "$INITRD" ]; then
-  echo "initrd found at: $INITRD"
+if [ -f "$INITRD" ]; then
+  echo "initrd found, size: $(du -h "$INITRD" | cut -f1)"
   TMPDIR=$(mktemp -d)
   cd "$TMPDIR"
+
   # Try multiple decompression formats
-  (zcat "$INITRD" | cpio -idm 2>/dev/null) || \
-  (xzcat "$INITRD" | cpio -idm 2>/dev/null) || \
-  (lz4cat "$INITRD" | cpio -idm 2>/dev/null) || \
+  zcat "$INITRD" 2>/dev/null | cpio -idm 2>/dev/null || \
+  xzcat "$INITRD" 2>/dev/null | cpio -idm 2>/dev/null || \
+  (dd if="$INITRD" bs=512 skip=1 2>/dev/null | zcat | cpio -idm 2>/dev/null) || \
   echo "could not decompress initrd"
 
-  echo "--- kernel modules in initrd ---"
-  find . -name "*.ko*" | grep -E "ahci|virtio|sd_mod|scsi|ata" || echo "none of the expected modules found"
-
-  echo "--- all kernel modules in initrd ---"
-  find . -name "*.ko*" | sed 's|.*/||' | sort
-
+  echo ""
   echo "--- fstab inside initrd ---"
   cat etc/fstab 2>/dev/null || echo "no fstab in initrd"
 
-  echo "--- init script root mount section ---"
-  grep -A5 -i "partlabel\|by-uuid\|root=" init 2>/dev/null || echo "not found in init"
+  echo ""
+  echo "--- virtio/scsi/ahci modules in initrd ---"
+  find . -name "*.ko*" 2>/dev/null | grep -E "virtio|ahci|sd_mod|scsi|ata_" | sed 's|.*/||' | sort || echo "none found"
+
+  echo ""
+  echo "--- all .ko files in initrd ---"
+  find . -name "*.ko*" 2>/dev/null | sed 's|.*/||' | sort
 
   cd /
   rm -rf "$TMPDIR"
 else
-  echo "initrd NOT FOUND at /mnt/boot/"
-  ls /mnt/boot/
+  echo "initrd NOT FOUND at $INITRD"
 fi
-
-echo ""
-echo "====== NixOS system path ======"
-ls /mnt/nix/var/nix/profiles/ 2>/dev/null || echo "NOT FOUND"
 
 echo ""
 echo "====== done ======"
