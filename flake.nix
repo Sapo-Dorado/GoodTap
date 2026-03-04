@@ -215,6 +215,7 @@
         modules = [
           disko.nixosModules.disko
           self.nixosModules.default
+          ./hardware/hetzner-hardware-configuration.nix
 
           ({ pkgs, lib, ... }:
             let
@@ -223,6 +224,7 @@
               sshKey =
                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKW8DZZYK2k5aOg8f/dfscXLG9bOLLzTU/6h8uWP5Rrw";
             in {
+
               # ---- Disk layout (disko — used by nixos-anywhere to partition the disk) ----
               disko.devices.disk.main = {
                 device = "/dev/sda";
@@ -256,8 +258,6 @@
               boot.loader.grub.enable = true;
               boot.loader.grub.efiSupport = false;
 
-              # ---- Kernel modules needed in initrd to find /dev/sda on Hetzner ----
-              boot.initrd.availableKernelModules = [ "ahci" "sd_mod" "ata_piix" ];
 
               # ---- SSH access ----
               users.users.root.openssh.authorizedKeys.keys = [ sshKey ];
