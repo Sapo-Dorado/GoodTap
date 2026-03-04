@@ -230,14 +230,9 @@
                 content = {
                   type = "gpt";
                   partitions = {
-                    ESP = {
-                      size = "512M";
-                      type = "EF00"; # EFI System Partition
-                      content = {
-                        type = "filesystem";
-                        format = "vfat";
-                        mountpoint = "/boot";
-                      };
+                    boot = {
+                      size = "1M";
+                      type = "EF02"; # BIOS boot partition (required for GRUB on GPT)
                     };
                     swap = {
                       size = "2G";
@@ -256,8 +251,9 @@
               };
 
               # ---- Bootloader ----
-              boot.loader.systemd-boot.enable = true;
-              boot.loader.efi.canTouchEfiVariables = true;
+              boot.loader.grub.enable = true;
+              boot.loader.grub.device = "/dev/sda";
+              boot.loader.grub.efiSupport = false;
 
               # ---- SSH access ----
               users.users.root.openssh.authorizedKeys.keys = [ sshKey ];
