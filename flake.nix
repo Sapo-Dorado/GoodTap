@@ -251,9 +251,13 @@
               };
 
               # ---- Bootloader ----
+              # disko automatically configures mirroredBoots based on the disk layout;
+              # setting grub.device(s) manually would duplicate the entry and fail.
               boot.loader.grub.enable = true;
-              boot.loader.grub.devices = [ "/dev/sda" ];
               boot.loader.grub.efiSupport = false;
+
+              # ---- Kernel modules needed in initrd to find /dev/sda on Hetzner ----
+              boot.initrd.availableKernelModules = [ "ahci" "sd_mod" "ata_piix" ];
 
               # ---- SSH access ----
               users.users.root.openssh.authorizedKeys.keys = [ sshKey ];

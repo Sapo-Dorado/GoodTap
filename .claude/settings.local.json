@@ -11,7 +11,11 @@
       "Bash(curl:*)",
       "WebSearch",
       "Bash(git rm:*)",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:discourse.nixos.org)",
+      "WebFetch(domain:nixos.asia)",
+      "WebFetch(domain:mich-murphy.com)"
     ]
   }
 }
