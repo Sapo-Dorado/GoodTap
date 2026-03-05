@@ -45,6 +45,13 @@
           TAILWIND_PATH = "${pkgs.tailwindcss_4}/bin/tailwindcss";
           ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
 
+          # heroicons.js plugin reads SVGs from deps/heroicons/optimized at build time.
+          # mixFodDeps provides the source, but we need to symlink it into place.
+          preBuild = ''
+            mkdir -p deps
+            ln -sf ${mixFodDeps}/deps/heroicons deps/heroicons
+          '';
+
           postBuild = ''
             mkdir -p priv/static/assets/css priv/static/assets/js
             mix do assets.deploy, phx.digest
