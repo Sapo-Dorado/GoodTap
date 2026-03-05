@@ -31,6 +31,13 @@
             hash = "sha256-hTmfuLL0eTPtDQt7GdusTHxgTeGk8O4/cO26TsfuKuA=";
           };
 
+          # heroicons SVGs are downloaded by `mix deps.get` from GitHub at version 2.2.0.
+          # We fetch them as a fixed-output derivation so they're available in the sandbox.
+          heroiconsSrc = pkgs.fetchzip {
+            url = "https://github.com/tailwindlabs/heroicons/archive/refs/tags/v2.2.0.zip";
+            hash = "sha256-Jcxr1fSbmXO9bZKeg39Z/zVN0YJp17TX3LH5Us4lsZU=";
+          };
+
         in beamPkgs.mixRelease {
           pname = "goodtap";
           version = "0.1.1"; # keep in sync with mix.exs
@@ -46,10 +53,10 @@
           ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
 
           # heroicons.js plugin reads SVGs from deps/heroicons/optimized at build time.
-          # mixFodDeps provides the source, but we need to symlink it into place.
+          # The SVGs are fetched separately since mixFodDeps only has compiled beam files.
           preBuild = ''
-            mkdir -p deps
-            ln -sf ${mixFodDeps}/deps/heroicons deps/heroicons
+            mkdir -p deps/heroicons
+            ln -sf ${heroiconsSrc}/optimized deps/heroicons/optimized
           '';
 
           postBuild = ''
