@@ -117,13 +117,39 @@ Your app will be live at `https://yourdomain.com`.
 
 ### Subsequent deploys
 
+Use the deploy script from your local checkout:
+
 ```bash
-nixos-rebuild switch --flake .#goodtap --target-host root@<server-ip> --build-host root@<server-ip>
+./scripts/deploy.sh <server-ip>
+# or
+GOODTAP_SERVER=<server-ip> ./scripts/deploy.sh
 ```
 
-> **`--build-host`** is required when deploying from a Mac. It tells nixos-rebuild to build on the remote server (x86_64-linux) rather than locally. Without this, assets like CSS will be silently empty because the Tailwind standalone binary is architecture-specific and can't run on aarch64-darwin.
+This runs `nixos-rebuild switch` with `--build-host` set to the server, so:
+- Nix evaluates your **local** flake checkout (no GitHub tarball caching issues)
+- The Linux server builds its own closure (avoids macOS → Linux cross-compilation)
+- The new generation is activated immediately
 
-Migrations run automatically on each restart.
+> **Why not `nixos-rebuild switch --flake github:...`?** Nix caches GitHub tarballs for up to 1 hour. If you push a commit and immediately rebuild, you often get the stale cached version. Using a local checkout avoids this entirely.
+
+Migrations run automatically on each restart (via `ExecStartPre` in the systemd unit).
+
+### Seeding the database
+
+On first deploy (or to update card data):
+
+```bash
+ssh root@<server-ip> "/run/current-system/sw/bin/goodtap eval 'Goodtap.Release.seed()'"
+```
+
+This fetches the latest oracle card data from Scryfall (~300 MB download, ~37k cards).
+
+Alternatively, copy a pre-downloaded JSON file to the server first:
+
+```bash
+scp MTG_Cards.json root@<server-ip>:/var/lib/goodtap/
+ssh root@<server-ip> "/run/current-system/sw/bin/goodtap eval 'Goodtap.Release.seed(\"/var/lib/goodtap/MTG_Cards.json\")'"
+```
 
 ### Useful commands on the server
 
@@ -138,6 +164,9 @@ journalctl -u nginx -f
 
 # Run a migration manually
 /run/current-system/sw/bin/goodtap eval 'Goodtap.Release.migrate()'
+
+# Seed card data (fetches from Scryfall)
+/run/current-system/sw/bin/goodtap eval 'Goodtap.Release.seed()'
 
 # Connect to the database
 psql -U goodtap goodtap

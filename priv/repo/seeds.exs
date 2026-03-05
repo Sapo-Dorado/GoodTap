@@ -5,10 +5,11 @@ raw =
   case System.get_env("SEEDS_JSON_PATH") do
     nil ->
       IO.puts("Fetching latest oracle cards from Scryfall...")
-      {:ok, %{body: meta}} = Req.get("https://api.scryfall.com/bulk-data/oracle-cards")
+      headers = [{"User-Agent", "GoodTap/1.0"}, {"Accept", "application/json"}]
+      {:ok, %{body: meta}} = Req.get("https://api.scryfall.com/bulk-data/oracle-cards", headers: headers)
       url = meta["download_uri"]
       IO.puts("Downloading #{url}...")
-      {:ok, %{body: body}} = Req.get(url, receive_timeout: 120_000)
+      {:ok, %{body: body}} = Req.get(url, headers: headers, receive_timeout: 120_000)
       Jason.encode!(body)
 
     path ->
