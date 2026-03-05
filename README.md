@@ -98,6 +98,7 @@ nix run github:nix-community/nixos-anywhere -- \
   --extra-files /tmp/goodtap-secrets \
   --kexec "https://github.com/nix-community/nixos-images/releases/download/nixos-25.11/nixos-kexec-installer-noninteractive-x86_64-linux.tar.gz" \
   --flake .#goodtap \
+  --build-on-remote \
   root@<server-ip>
 
 rm -rf /tmp/goodtap-secrets
@@ -117,8 +118,10 @@ Your app will be live at `https://yourdomain.com`.
 ### Subsequent deploys
 
 ```bash
-nixos-rebuild switch --flake .#goodtap --target-host root@<server-ip>
+nixos-rebuild switch --flake .#goodtap --target-host root@<server-ip> --build-host root@<server-ip>
 ```
+
+> **`--build-host`** is required when deploying from a Mac. It tells nixos-rebuild to build on the remote server (x86_64-linux) rather than locally. Without this, assets like CSS will be silently empty because the Tailwind standalone binary is architecture-specific and can't run on aarch64-darwin.
 
 Migrations run automatically on each restart.
 

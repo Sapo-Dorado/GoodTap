@@ -61,14 +61,6 @@
             export TAILWIND_PATH=${tailwindcss}/bin/tailwindcss
             export ESBUILD_PATH=${pkgs.esbuild}/bin/esbuild
             mkdir -p priv/static/assets/css priv/static/assets/js
-            echo "--- running tailwind directly for diagnostics ---"
-            ${tailwindcss}/bin/tailwindcss \
-              --input=assets/css/app.css \
-              --output=priv/static/assets/css/app.css \
-              --minify || echo "tailwind exited with $?"
-            echo "--- css output ---"
-            ls -la priv/static/assets/css/
-            echo "--- running assets.deploy ---"
             mix do assets.deploy, phx.digest
           '';
         };
