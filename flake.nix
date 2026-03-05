@@ -49,7 +49,7 @@
           };
         in beamPkgs.mixRelease {
           pname = "goodtap";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./.;
           inherit elixir mixFodDeps;
 
@@ -61,6 +61,14 @@
             export TAILWIND_PATH=${tailwindcss}/bin/tailwindcss
             export ESBUILD_PATH=${pkgs.esbuild}/bin/esbuild
             mkdir -p priv/static/assets/css priv/static/assets/js
+            echo "--- running tailwind directly for diagnostics ---"
+            ${tailwindcss}/bin/tailwindcss \
+              --input=assets/css/app.css \
+              --output=priv/static/assets/css/app.css \
+              --minify || echo "tailwind exited with $?"
+            echo "--- css output ---"
+            ls -la priv/static/assets/css/
+            echo "--- running assets.deploy ---"
             mix do assets.deploy, phx.digest
           '';
         };
@@ -179,9 +187,11 @@
                 WorkingDirectory = cfg.stateDir;
                 # Secrets (SECRET_KEY_BASE, etc.) are loaded from this file
                 EnvironmentFile = cfg.secretsFile;
-                # Run DB migrations before starting the server
-                ExecStartPre =
-                  "${goodtap}/bin/goodtap eval 'Goodtap.Release.migrate()'";
+                # Ensure RELEASE_TMP exists before the release tries to write the cookie
+                ExecStartPre = [
+                  "${pkgs.coreutils}/bin/mkdir -p ${cfg.stateDir}/tmp"
+                  "${goodtap}/bin/goodtap eval 'Goodtap.Release.migrate()'"
+                ];
                 ExecStart = "${goodtap}/bin/goodtap start";
                 Restart = "on-failure";
                 RestartSec = "5s";
