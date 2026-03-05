@@ -15,7 +15,8 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:discourse.nixos.org)",
       "WebFetch(domain:nixos.asia)",
-      "WebFetch(domain:mich-murphy.com)"
+      "WebFetch(domain:mich-murphy.com)",
+      "WebFetch(domain:nixos.wiki)"
     ]
   }
 }

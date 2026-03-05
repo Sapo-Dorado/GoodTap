@@ -31,34 +31,18 @@
             hash = "sha256-hTmfuLL0eTPtDQt7GdusTHxgTeGk8O4/cO26TsfuKuA=";
           };
 
-          tailwindcss = let
-            src = pkgs.fetchurl {
-              url =
-                "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.1.12/tailwindcss-linux-x64";
-              hash = "sha256-Xu7mbqI36umhYPozFP0M92q5k1Uamfr7Fvodtsa5Aok=";
-            };
-          in pkgs.stdenv.mkDerivation {
-            name = "tailwindcss-4.1.12";
-            dontUnpack = true;
-            nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-            installPhase = ''
-              mkdir -p $out/bin
-              cp ${src} $out/bin/tailwindcss
-              chmod +x $out/bin/tailwindcss
-            '';
-          };
         in beamPkgs.mixRelease {
           pname = "goodtap";
           version = "0.1.1"; # keep in sync with mix.exs
           src = ./.;
           inherit elixir mixFodDeps;
 
-          nativeBuildInputs = [ pkgs.git tailwindcss pkgs.esbuild ];
+          nativeBuildInputs = [ pkgs.git pkgs.tailwindcss_4 pkgs.esbuild ];
 
           # TAILWIND_PATH and ESBUILD_PATH are read by config/config.exs at
           # compile time via System.get_env, so they must be set as derivation
           # environment variables, not in postBuild.
-          TAILWIND_PATH = "${tailwindcss}/bin/tailwindcss";
+          TAILWIND_PATH = "${pkgs.tailwindcss_4}/bin/tailwindcss";
           ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
 
           postBuild = ''
