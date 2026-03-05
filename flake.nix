@@ -53,22 +53,15 @@
           src = ./.;
           inherit elixir mixFodDeps;
 
-          nativeBuildInputs = [ pkgs.git ];
+          nativeBuildInputs = [ pkgs.git tailwindcss pkgs.esbuild ];
 
-          # Place binaries where the mix tailwind/esbuild tasks expect them,
-          # so they don't try to download them from the network.
-          # Note: tailwind v4 standalone is a bun binary that uses argv[0] to
-          # determine its mode — it must be named/symlinked as "tailwindcss".
+          # TAILWIND_PATH and ESBUILD_PATH are read by config/config.exs at
+          # compile time via System.get_env, so they must be set as derivation
+          # environment variables, not in postBuild.
+          TAILWIND_PATH = "${tailwindcss}/bin/tailwindcss";
+          ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
+
           postBuild = ''
-            mkdir -p _build
-            # Symlink as tailwindcss so bun recognises it as the tailwind CLI
-            ln -s ${tailwindcss}/bin/tailwindcss _build/tailwindcss
-            # Wrap so the mix task finds it at the expected path (tailwind-linux-x64)
-            # but the process name seen by bun is still "tailwindcss"
-            echo '#!/bin/sh' > _build/tailwind-linux-x64
-            echo 'exec "_build/tailwindcss" "$@"' >> _build/tailwind-linux-x64
-            chmod +x _build/tailwind-linux-x64
-            cp ${pkgs.esbuild}/bin/esbuild _build/esbuild-linux-x64
             mkdir -p priv/static/assets/css priv/static/assets/js
             mix do assets.deploy, phx.digest
           '';
