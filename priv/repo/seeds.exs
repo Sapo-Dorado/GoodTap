@@ -1,12 +1,22 @@
 alias Goodtap.Repo
 alias Goodtap.Catalog.Card
 
-json_path = Path.join(__DIR__, "data/MTG_Cards.json")
+raw =
+  case System.get_env("SEEDS_JSON_PATH") do
+    nil ->
+      IO.puts("Fetching latest oracle cards from Scryfall...")
+      {:ok, %{body: meta}} = Req.get("https://api.scryfall.com/bulk-data/oracle-cards")
+      url = meta["download_uri"]
+      IO.puts("Downloading #{url}...")
+      {:ok, %{body: body}} = Req.get(url, receive_timeout: 120_000)
+      Jason.encode!(body)
 
-IO.puts("Loading MTG_Cards.json...")
-{:ok, raw} = File.read(json_path)
+    path ->
+      IO.puts("Loading #{path}...")
+      File.read!(path)
+  end
 IO.puts("Parsing JSON...")
-{:ok, cards_data} = Jason.decode(raw)
+cards_data = Jason.decode!(raw)
 
 IO.puts("Seeding #{length(cards_data)} cards...")
 

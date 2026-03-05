@@ -9,6 +9,19 @@ defmodule Goodtap.Release do
     end
   end
 
+  def seed(json_path \\ "/var/lib/goodtap/MTG_Cards.json") do
+    load_app()
+    System.put_env("SEEDS_JSON_PATH", json_path)
+
+    for repo <- repos() do
+      {:ok, _, _} =
+        Ecto.Migrator.with_repo(repo, fn _repo ->
+          seeds = Application.app_dir(:goodtap, "priv/repo/seeds.exs")
+          Code.eval_file(seeds)
+        end)
+    end
+  end
+
   def rollback(repo, version) do
     load_app()
     {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
