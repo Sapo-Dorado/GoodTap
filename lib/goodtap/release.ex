@@ -13,6 +13,9 @@ defmodule Goodtap.Release do
     load_app()
     if json_path, do: System.put_env("SEEDS_JSON_PATH", json_path)
 
+    # Req uses Finch under the hood; start it if not already running
+    {:ok, _} = Application.ensure_all_started(:req)
+
     for repo <- repos() do
       {:ok, _, _} =
         Ecto.Migrator.with_repo(repo, fn _repo ->
