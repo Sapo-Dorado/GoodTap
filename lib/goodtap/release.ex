@@ -9,9 +9,9 @@ defmodule Goodtap.Release do
     end
   end
 
-  def seed(json_path \\ "/var/lib/goodtap/MTG_Cards.json") do
+  def seed(json_path \\ nil) do
     load_app()
-    System.put_env("SEEDS_JSON_PATH", json_path)
+    if json_path, do: System.put_env("SEEDS_JSON_PATH", json_path)
 
     for repo <- repos() do
       {:ok, _, _} =

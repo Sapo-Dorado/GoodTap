@@ -67,5 +67,6 @@ ssh -t "root@${SERVER}" \
 echo ""
 echo "==> Deploy complete!"
 echo ""
-echo "To seed the database (first deploy or card data update):"
-echo "  ssh root@${SERVER} \"/run/current-system/sw/bin/goodtap eval 'Goodtap.Release.seed()'\""
+GOODTAP_BIN="$(ssh "root@${SERVER}" "systemctl cat goodtap | grep '^ExecStart=' | sed 's/ExecStart=//;s/ start$//'")"
+echo "To seed the database (fetches from Scryfall):"
+echo "  ssh root@${SERVER} 'export \$(cat /etc/goodtap/secrets | xargs); DATABASE_URL=ecto://goodtap@localhost/goodtap PHX_HOST=goodtap.in PORT=4000 ${GOODTAP_BIN} eval \"Goodtap.Release.seed()\"'"
