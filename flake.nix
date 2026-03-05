@@ -55,11 +55,12 @@
 
           nativeBuildInputs = [ pkgs.git ];
 
-          # The mix esbuild/tailwind packages respect these env vars instead of
-          # downloading binaries, letting us use Nix-provided versions.
+          # Place binaries where the mix tailwind/esbuild tasks expect them,
+          # so they don't try to download them from the network.
           postBuild = ''
-            export TAILWIND_PATH=${tailwindcss}/bin/tailwindcss
-            export ESBUILD_PATH=${pkgs.esbuild}/bin/esbuild
+            mkdir -p _build
+            cp ${tailwindcss}/bin/tailwindcss _build/tailwind-linux-x64
+            cp ${pkgs.esbuild}/bin/esbuild _build/esbuild-linux-x64
             mkdir -p priv/static/assets/css priv/static/assets/js
             mix do assets.deploy, phx.digest
           '';
