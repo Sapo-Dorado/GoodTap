@@ -39,13 +39,10 @@ defmodule Goodtap.Catalog do
 
   # Find a card by name, also searching card_faces for DFC front face names
   def find_card_for_deck(name) do
-    case get_card_by_name(name) do
+    case Repo.get_by(Card, name: name, is_token: false) do
       nil ->
-        # Try case-insensitive
-        search = name
-
         Card
-        |> where([c], fragment("lower(?) = lower(?)", c.name, ^search))
+        |> where([c], fragment("lower(?) = lower(?)", c.name, ^name) and not c.is_token)
         |> limit(1)
         |> Repo.one()
 

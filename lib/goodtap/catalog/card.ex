@@ -8,13 +8,14 @@ defmodule Goodtap.Catalog.Card do
   schema "cards" do
     field :name, :string
     field :layout, :string
+    field :is_token, :boolean, default: false
     field :data, :map
     timestamps()
   end
 
   def changeset(card, attrs) do
     card
-    |> cast(attrs, [:id, :name, :layout, :data])
+    |> cast(attrs, [:id, :name, :layout, :is_token, :data])
     |> validate_required([:id, :name, :data])
   end
 end

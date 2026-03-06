@@ -25,6 +25,36 @@ defmodule Goodtap.Release do
     end
   end
 
+  @cards_json "/var/lib/goodtap/MTG_Cards.json"
+
+  def update_cards do
+    load_app()
+    {:ok, _} = Application.ensure_all_started(:req)
+
+    IO.puts("Fetching latest oracle cards from Scryfall...")
+    headers = [{"User-Agent", "GoodTap/1.0"}, {"Accept", "application/json"}]
+    {:ok, %{body: meta}} = Req.get("https://api.scryfall.com/bulk-data/oracle-cards", headers: headers)
+    url = meta["download_uri"]
+    IO.puts("Downloading #{url}...")
+    {:ok, %{body: body}} = Req.get(url, headers: headers, receive_timeout: 120_000)
+
+    IO.puts("Writing to #{@cards_json}...")
+    File.write!(@cards_json, Jason.encode!(body))
+
+    IO.puts("Truncating cards table...")
+    for repo <- repos() do
+      {:ok, _, _} =
+        Ecto.Migrator.with_repo(repo, fn repo ->
+          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE cards")
+        end)
+    end
+
+    IO.puts("Reseeding...")
+    seed(@cards_json)
+
+    IO.puts("Done!")
+  end
+
   def rollback(repo, version) do
     load_app()
     {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))

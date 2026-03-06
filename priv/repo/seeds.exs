@@ -33,6 +33,7 @@ cards_data
         id: card["id"],
         name: card["name"],
         layout: card["layout"],
+        is_token: card["layout"] == "token",
         data: card,
         inserted_at: now,
         updated_at: now
@@ -40,7 +41,7 @@ cards_data
     end)
 
   Repo.insert_all(Card, entries,
-    on_conflict: {:replace, [:name, :layout, :data, :updated_at]},
+    on_conflict: {:replace, [:name, :layout, :is_token, :data, :updated_at]},
     conflict_target: [:id]
   )
 
