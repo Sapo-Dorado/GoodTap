@@ -68,5 +68,6 @@ defmodule GoodtapWeb.Hotkeys do
   def action_label(:draw_one), do: "Draw 1"
   def action_label(:draw_face_down), do: "Draw Face-Down to Battlefield"
   def action_label(:find_card), do: "Find Card"
+  def action_label(:mulligan), do: "Mulligan"
   def action_label(other), do: to_string(other)
 end

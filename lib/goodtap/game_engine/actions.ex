@@ -199,6 +199,27 @@ defmodule Goodtap.GameEngine.Actions do
     {:ok, state}
   end
 
+  # ─── Mulligan ─────────────────────────────────────────────────────────────
+
+  def mulligan(state, player) do
+    hand = get_in(state, [player, "zones", "hand"])
+    deck = get_in(state, [player, "zones", "deck"])
+
+    new_deck =
+      (hand ++ deck)
+      |> Enum.map(&Map.put(&1, "known", false))
+      |> Enum.shuffle()
+
+    {new_hand, new_deck} = Enum.split(new_deck, 7)
+
+    state =
+      state
+      |> put_in([player, "zones", "hand"], new_hand)
+      |> put_in([player, "zones", "deck"], new_deck)
+
+    {:ok, state}
+  end
+
   # ─── Scry ─────────────────────────────────────────────────────────────────
 
   # Reveal top N cards (remove from deck top, return them for display)

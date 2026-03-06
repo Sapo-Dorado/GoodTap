@@ -118,11 +118,18 @@ const DragDrop = {
       }
     };
 
+    const handMenuBtn = document.getElementById("hand-menu-btn");
+    const onHandMenuClick = (e) => {
+      const rect = handMenuBtn.getBoundingClientRect();
+      this.pushEvent("hand_menu", {x: rect.left, y: rect.bottom + 4});
+    };
+
     this.el.addEventListener("mousedown", onMousedown);
     this.el.addEventListener("mouseover", onMouseover);
     this.el.addEventListener("mouseout", onMouseout);
     document.addEventListener("keydown", onKeydown);
     document.addEventListener("mousedown", onDocMousedown);
+    if (handMenuBtn) handMenuBtn.addEventListener("click", onHandMenuClick);
 
     this._cleanup = () => {
       this.el.removeEventListener("mousedown", onMousedown);
@@ -130,6 +137,7 @@ const DragDrop = {
       this.el.removeEventListener("mouseout", onMouseout);
       document.removeEventListener("keydown", onKeydown);
       document.removeEventListener("mousedown", onDocMousedown);
+      if (handMenuBtn) handMenuBtn.removeEventListener("click", onHandMenuClick);
     };
   },
 

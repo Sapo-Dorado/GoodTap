@@ -344,6 +344,18 @@ defmodule GoodtapWeb.GameLive do
     end)
   end
 
+  def handle_event("action", %{"type" => "mulligan"}, socket) do
+    apply_action(socket, fn state, player ->
+      {:ok, new_state} = Actions.mulligan(state, player)
+      {:ok, append_log(new_state, player, "took a mulligan")}
+    end)
+  end
+
+  def handle_event("hand_menu", %{"x" => x, "y" => y}, socket) do
+    context_menu = %{instance_id: nil, zone: nil, x: x, y: y, actions: [:mulligan], scry_count: 1}
+    {:noreply, assign(socket, context_menu: context_menu)}
+  end
+
   def handle_event("action", %{"type" => "draw", "count" => count}, socket) do
     n = String.to_integer(to_string(count))
     apply_action(socket, fn state, player ->
@@ -1243,7 +1255,7 @@ defmodule GoodtapWeb.GameLive do
         <div
           id="my-hand"
           data-drop-zone="hand"
-          class="flex items-center bg-gray-900 border-t border-gray-700 overflow-x-auto shrink-0"
+          class="relative flex items-center bg-gray-900 border-t border-gray-700 overflow-x-auto shrink-0"
           style="height: 120px;"
         >
           <div class="flex items-center gap-1 px-4 py-2 min-w-max mx-auto">
@@ -1268,6 +1280,17 @@ defmodule GoodtapWeb.GameLive do
               </div>
             <% end %>
           </div>
+
+          <%!-- Hand menu button (top-right corner) --%>
+          <button
+            id="hand-menu-btn"
+            class="absolute top-2 right-2 p-1.5 rounded text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+            title="Hand options"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
         </div>
 
         <%!-- Zone Popup (inline, below hand) --%>
