@@ -41,11 +41,11 @@ defmodule Goodtap.Release do
     IO.puts("Writing to #{@cards_json}...")
     File.write!(@cards_json, Jason.encode!(body))
 
-    IO.puts("Truncating cards table...")
+    IO.puts("Truncating games and cards tables...")
     for repo <- repos() do
       {:ok, _, _} =
         Ecto.Migrator.with_repo(repo, fn repo ->
-          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE cards")
+          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE games, cards")
         end)
     end
 

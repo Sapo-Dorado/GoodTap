@@ -3,6 +3,7 @@ defmodule Goodtap.Decks do
   alias Goodtap.Repo
   alias Goodtap.Decks.{Deck, DeckCard}
   alias Goodtap.Decks.Importers.Plaintext
+  alias Goodtap.Catalog
 
   def list_user_decks(user_id) do
     Deck
@@ -21,14 +22,20 @@ defmodule Goodtap.Decks do
 
   defp insert_deck_cards(deck, card_list) do
     Enum.each(card_list, fn %{name: name, quantity: qty, board: board} ->
-      %DeckCard{}
-      |> DeckCard.changeset(%{
-        deck_id: deck.id,
-        card_name: name,
-        quantity: qty,
-        board: board
-      })
-      |> Repo.insert(on_conflict: :replace_all, conflict_target: [:deck_id, :card_name, :board])
+      case Catalog.find_card_for_deck(name) do
+        nil ->
+          :ok
+
+        card ->
+          %DeckCard{}
+          |> DeckCard.changeset(%{
+            deck_id: deck.id,
+            card_name: card.name,
+            quantity: qty,
+            board: board
+          })
+          |> Repo.insert(on_conflict: :replace_all, conflict_target: [:deck_id, :card_name, :board])
+      end
     end)
   end
 

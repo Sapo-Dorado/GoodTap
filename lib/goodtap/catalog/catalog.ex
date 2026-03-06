@@ -43,17 +43,31 @@ defmodule Goodtap.Catalog do
     |> Repo.all()
   end
 
-  # Find a card by name, also searching card_faces for DFC front face names
-  def find_card_for_deck(name) do
-    case Repo.get_by(Card, name: name, is_token: false) do
-      nil ->
-        Card
-        |> where([c], fragment("lower(?) = lower(?)", c.name, ^name) and not c.is_token)
-        |> limit(1)
-        |> Repo.one()
+  # Find a card by name for deck import.
+  # Always searches by the front face name only (before any " //") since Scryfall
+  # is inconsistent about whether it stores the full DFC name or just the front.
+  # Falls back to a unique contains match if no exact hit.
+  def find_card_for_deck(raw_name) do
+    name = raw_name |> String.split("//") |> List.first() |> String.trim()
 
-      card ->
+    # 1. Case-insensitive exact match on front face name
+    exact =
+      Card
+      |> where([c], fragment("lower(?) = lower(?)", c.name, ^name) and not c.is_token)
+      |> Repo.all()
+
+    case exact do
+      [card | _] ->
         card
+
+      [] ->
+        # 2. Unique contains match — only use if exactly one result
+        search = "%#{name}%"
+
+        case Card |> where([c], ilike(c.name, ^search) and not c.is_token) |> Repo.all() do
+          [card] -> card
+          _ -> nil
+        end
     end
   end
 end

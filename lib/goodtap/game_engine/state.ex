@@ -25,9 +25,14 @@ defmodule Goodtap.GameEngine.State do
 
     instances =
       card_names
-      |> Enum.map(fn name ->
-        card = Map.fetch!(card_map, name)
-        build_card_instance(card)
+      |> Enum.flat_map(fn name ->
+        case Map.fetch(card_map, name) do
+          {:ok, card} -> [build_card_instance(card)]
+          :error ->
+            require Logger
+            Logger.warning("Card not found in catalog, skipping: #{inspect(name)}")
+            []
+        end
       end)
       |> Enum.shuffle()
 
