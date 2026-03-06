@@ -27,6 +27,21 @@ defmodule Goodtap.Release do
 
   @cards_json "/var/lib/goodtap/MTG_Cards.json"
 
+  def force_reset do
+    load_app()
+    {:ok, _} = Application.ensure_all_started(:req)
+
+    IO.puts("Truncating decks, games, and cards tables...")
+    for repo <- repos() do
+      {:ok, _, _} =
+        Ecto.Migrator.with_repo(repo, fn repo ->
+          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE deck_cards, decks, games, cards")
+        end)
+    end
+
+    update_cards()
+  end
+
   def update_cards do
     load_app()
     {:ok, _} = Application.ensure_all_started(:req)
