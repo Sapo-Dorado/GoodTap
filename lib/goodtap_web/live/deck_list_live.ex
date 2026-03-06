@@ -151,10 +151,10 @@ defmodule GoodtapWeb.DeckListLive do
                   {board} ({Enum.sum(Enum.map(cards, & &1.quantity))})
                 </h3>
                 <div class="space-y-1">
-                  <%= for dc <- Enum.sort_by(cards, & &1.card.name) do %>
+                  <%= for dc <- Enum.sort_by(cards, & &1.card_name) do %>
                     <div class="flex items-center gap-2 text-sm">
                       <span class="text-gray-400 w-5 text-right shrink-0">{dc.quantity}x</span>
-                      <span class="text-white">{dc.card.name}</span>
+                      <span class="text-white">{dc.card_name}</span>
                     </div>
                   <% end %>
                 </div>
