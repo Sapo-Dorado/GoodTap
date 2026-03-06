@@ -6,7 +6,16 @@ defmodule GoodtapWeb.GameLive do
   alias GoodtapWeb.Hotkeys
 
   def mount(%{"id" => id}, _session, socket) do
-    game = Games.get_game!(id)
+    case Games.get_game(id) do
+      nil ->
+        {:ok, push_navigate(socket, to: ~p"/games")}
+
+      game ->
+        mount_game(game, socket)
+    end
+  end
+
+  defp mount_game(game, socket) do
     user = socket.assigns.current_scope.user
 
     # Verify user is in this game
