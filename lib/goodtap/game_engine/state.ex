@@ -19,14 +19,14 @@ defmodule Goodtap.GameEngine.State do
   end
 
   defp build_player_state(user, deck_id) do
-    card_ids = Decks.expand_deck_card_ids(deck_id)
-    cards_by_id = Catalog.list_cards_by_ids(Enum.uniq(card_ids))
-    card_map = Map.new(cards_by_id, &{&1.id, &1})
+    card_names = Decks.expand_deck_card_names(deck_id)
+    cards = Catalog.list_cards_by_names(Enum.uniq(card_names))
+    card_map = Map.new(cards, &{&1.name, &1})
 
     instances =
-      card_ids
-      |> Enum.map(fn card_id ->
-        card = Map.fetch!(card_map, card_id)
+      card_names
+      |> Enum.map(fn name ->
+        card = Map.fetch!(card_map, name)
         build_card_instance(card)
       end)
       |> Enum.shuffle()

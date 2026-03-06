@@ -37,6 +37,12 @@ defmodule Goodtap.Catalog do
     |> Repo.all()
   end
 
+  def list_cards_by_names(names) when is_list(names) do
+    Card
+    |> where([c], c.name in ^names and not c.is_token)
+    |> Repo.all()
+  end
+
   # Find a card by name, also searching card_faces for DFC front face names
   def find_card_for_deck(name) do
     case Repo.get_by(Card, name: name, is_token: false) do
