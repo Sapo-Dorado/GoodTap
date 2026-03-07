@@ -1,12 +1,10 @@
-// Clamp context menu position so it stays within viewport
-function clampMenuPos(x, y) {
+// Returns x clamped to viewport width, and y_from_bottom so menu opens upward from cursor.
+function menuPos(x, y) {
   const menuW = 200;
-  const menuH = 280;
   const vw = window.innerWidth;
-  const vh = window.innerHeight;
   return {
     x: Math.min(x, vw - menuW - 8),
-    y: Math.min(y, vh - menuH - 8)
+    y_from_bottom: window.innerHeight - y
   };
 }
 
@@ -55,14 +53,14 @@ const Battlefield = {
 
       const zone = card.dataset.zone || "battlefield";
       const owner = card.dataset.owner;
-      const pos = clampMenuPos(e.clientX, e.clientY);
+      const pos = menuPos(e.clientX, e.clientY);
 
       this.pushEvent("context_menu", {
         instance_id: card.dataset.instanceId,
         zone: zone,
         owner: owner,
         x: pos.x,
-        y: pos.y
+        y_from_bottom: pos.y_from_bottom
       });
     };
 
@@ -75,13 +73,13 @@ const Battlefield = {
       // Right-click on a pile zone (deck/graveyard/exile)
       const pile = e.target.closest("[data-pile-zone]");
       if (pile) {
-        const pos = clampMenuPos(e.clientX, e.clientY);
+        const pos = menuPos(e.clientX, e.clientY);
         this.pushEvent("context_menu", {
           instance_id: null,
           zone: pile.dataset.pileZone,
           owner: null,
           x: pos.x,
-          y: pos.y
+          y_from_bottom: pos.y_from_bottom
         });
         return;
       }

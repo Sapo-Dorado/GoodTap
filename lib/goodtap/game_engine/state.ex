@@ -9,8 +9,8 @@ defmodule Goodtap.GameEngine.State do
   Returns the game_state map ready to be stored in the Game record.
   """
   def initialize(host, opponent, host_deck_id, opponent_deck_id, opts \\ []) do
-    host_state = build_player_state(host, host_deck_id)
-    opponent_state = build_player_state(opponent, opponent_deck_id)
+    host_state = build_player_state(host, host_deck_id, "host")
+    opponent_state = build_player_state(opponent, opponent_deck_id, "opponent")
 
     base = %{"host" => host_state, "opponent" => opponent_state}
 
@@ -28,7 +28,7 @@ defmodule Goodtap.GameEngine.State do
     end
   end
 
-  defp build_player_state(user, deck_id) do
+  defp build_player_state(user, deck_id, role) do
     card_names = Decks.expand_deck_card_names(deck_id)
     commander_entry = Decks.get_commander(deck_id)
 
@@ -49,7 +49,8 @@ defmodule Goodtap.GameEngine.State do
       end)
       |> Enum.shuffle()
 
-    {hand, deck} = Enum.split(instances, 7)
+    {hand_raw, deck} = Enum.split(instances, 7)
+    hand = Enum.map(hand_raw, &Map.put(&1, "known", %{"host" => role == "host", "opponent" => role == "opponent"}))
 
     # Place commander on battlefield at a fixed initial position
     battlefield =
@@ -102,7 +103,7 @@ defmodule Goodtap.GameEngine.State do
       "image_uris" => extract_image_uris(card.data),
       "counters" => [],
       "tapped" => false,
-      "known" => false
+      "known" => %{"host" => false, "opponent" => false}
     }
   end
 
@@ -142,6 +143,19 @@ defmodule Goodtap.GameEngine.State do
   end
 
   @doc """
+  Returns true if the card is known to the given role.
+  Handles both the old boolean format and the new per-player map format.
+  """
+  def known_to?(card, role) do
+    case card["known"] do
+      true -> true
+      false -> false
+      nil -> false
+      map when is_map(map) -> map[role] == true
+    end
+  end
+
+  @doc """
   Determine the display image URL for a card given viewer perspective.
   """
   def card_display_url(card_instance, viewer_role, owner_role, zone) do
@@ -149,7 +163,7 @@ defmodule Goodtap.GameEngine.State do
       hidden_from_viewer?(viewer_role, owner_role, zone) ->
         card_back_url()
 
-      zone == "deck" and card_instance["known"] != true ->
+      zone == "deck" and not known_to?(card_instance, viewer_role) ->
         card_back_url()
 
       card_instance["is_face_down"] ->
@@ -164,6 +178,6 @@ defmodule Goodtap.GameEngine.State do
   end
 
   defp hidden_from_viewer?(viewer_role, owner_role, zone) do
-    viewer_role != owner_role and zone in ["hand", "deck"]
+    viewer_role != owner_role and zone == "hand"
   end
 end

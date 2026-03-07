@@ -27,7 +27,7 @@ defmodule GoodtapWeb.Hotkeys do
   end
 
   def valid_actions_for("hand") do
-    [:move_to_graveyard, :move_to_exile, :move_to_deck_top, :move_to_deck_bottom, :flip_card]
+    [:move_to_graveyard, :move_to_exile, :move_to_deck_top, :move_to_deck_bottom, :flip_card, :reveal_card]
   end
 
   def valid_actions_for("battlefield") do
@@ -74,6 +74,9 @@ defmodule GoodtapWeb.Hotkeys do
   def action_label(:draw_face_down), do: "Draw Face-Down to Battlefield"
   def action_label(:find_card), do: "Find Card"
   def action_label(:mulligan), do: "Mulligan"
+  def action_label(:reveal_hand), do: "Reveal Hand"
+  def action_label(:hide_hand), do: "Hide Hand"
+  def action_label(:reveal_card), do: "Reveal to Opponent"
   def action_label(:copy_opponent_card), do: "Copy Card"
   def action_label(:target_card), do: "Target"
   def action_label(other), do: to_string(other)

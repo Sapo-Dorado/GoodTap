@@ -121,7 +121,7 @@ const DragDrop = {
     const handMenuBtn = document.getElementById("hand-menu-btn");
     const onHandMenuClick = (e) => {
       const rect = handMenuBtn.getBoundingClientRect();
-      this.pushEvent("hand_menu", {x: rect.left, y: rect.bottom + 4});
+      this.pushEvent("hand_menu", {x: rect.left, y_from_bottom: window.innerHeight - rect.top + 4});
     };
 
     this.el.addEventListener("mousedown", onMousedown);

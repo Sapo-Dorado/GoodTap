@@ -144,21 +144,22 @@ defmodule GoodtapWeb.GameLive do
     instance_id = params["instance_id"]
     zone = params["zone"]
     x = params["x"]
-    y = params["y"]
+    y_from_bottom = params["y_from_bottom"]
     owner = params["owner"]
 
     actions =
-      if owner && owner != socket.assigns.my_role && zone == "battlefield" do
-        Hotkeys.valid_actions_for_opponent_battlefield()
-      else
-        Hotkeys.valid_actions_for(zone)
+      cond do
+        owner && owner != socket.assigns.my_role && zone == "battlefield" ->
+          Hotkeys.valid_actions_for_opponent_battlefield()
+        true ->
+          Hotkeys.valid_actions_for(zone)
       end
 
     context_menu = %{
       instance_id: instance_id,
       zone: zone,
       x: x,
-      y: y,
+      y_from_bottom: y_from_bottom,
       actions: actions,
       scry_count: 1
     }
@@ -454,9 +455,39 @@ defmodule GoodtapWeb.GameLive do
     end)
   end
 
-  def handle_event("hand_menu", %{"x" => x, "y" => y}, socket) do
-    context_menu = %{instance_id: nil, zone: nil, x: x, y: y, actions: [:mulligan], scry_count: 1}
+  def handle_event("hand_menu", %{"x" => x, "y_from_bottom" => y_from_bottom}, socket) do
+    context_menu = %{instance_id: nil, zone: nil, x: x, y_from_bottom: y_from_bottom, actions: [:mulligan, :reveal_hand, :hide_hand], scry_count: 1}
     {:noreply, assign(socket, context_menu: context_menu)}
+  end
+
+  def handle_event("action", %{"type" => "reveal_hand"}, socket) do
+    player = socket.assigns.my_role
+    hand = get_in(socket.assigns.game_state, [player, "zones", "hand"]) || []
+    instance_ids = Enum.map(hand, & &1["instance_id"])
+    apply_action(socket, fn state, _p ->
+      {:ok, new_state} = Actions.reveal_cards(state, player, instance_ids)
+      {:ok, append_log(new_state, player, "revealed their hand")}
+    end)
+  end
+
+  def handle_event("action", %{"type" => "hide_hand"}, socket) do
+    player = socket.assigns.my_role
+    apply_action(socket, fn state, _p ->
+      {:ok, new_state} = Actions.hide_hand(state, player)
+      {:ok, append_log(new_state, player, "hid their hand")}
+    end)
+  end
+
+  def handle_event("action", %{"type" => "reveal_card", "instance_id" => id}, socket) do
+    player = socket.assigns.my_role
+    name = get_in(socket.assigns.game_state, [player, "zones", "hand"])
+      |> Kernel.||([])
+      |> Enum.find(&(&1["instance_id"] == id))
+      |> then(&(&1 && &1["name"] || "a card"))
+    apply_action(socket, fn state, _p ->
+      {:ok, new_state} = Actions.reveal_cards(state, player, [id])
+      {:ok, append_log(new_state, player, "revealed #{name}")}
+    end)
   end
 
   def handle_event("action", %{"type" => "draw", "count" => count}, socket) do
@@ -1072,9 +1103,9 @@ defmodule GoodtapWeb.GameLive do
       >
         <div class="flex items-center gap-1 px-4 py-2 min-w-max mx-auto">
           <%= if hand_count > 0 do %>
-            <%= for _i <- 0..(hand_count - 1) do %>
+            <%= for card <- opp_hand do %>
               <img
-                src="/images/CardBack.png"
+                src={if State.known_to?(card, @my_role), do: (card["image_uris"]["front"] || "/images/CardBack.png"), else: "/images/CardBack.png"}
                 class="rounded shadow"
                 style="width: 30px; height: 44px; object-fit: cover;"
                 draggable="false"
@@ -1229,7 +1260,7 @@ defmodule GoodtapWeb.GameLive do
           >
             <div class="relative" style="width: 56px; height: 78px;">
               <%= if zone_cards(@opp, "deck") != [] do %>
-                <img src="/images/CardBack.png" class="rounded shadow-lg pointer-events-none" style="width: 56px; height: 78px; object-fit: cover;" draggable="false" />
+                <img src={card_display_url(hd(zone_cards(@opp, "deck")), @my_role, @opp_role, "deck")} class="rounded shadow-lg pointer-events-none" style="width: 56px; height: 78px; object-fit: cover;" draggable="false" />
               <% else %>
                 <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
                   <span class="text-gray-400 text-xs font-semibold">DECK</span>
@@ -1450,7 +1481,7 @@ defmodule GoodtapWeb.GameLive do
             :if={@context_menu}
             id="context-menu"
             class="fixed z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-40"
-            style={"left: #{@context_menu.x}px; top: #{@context_menu.y}px;"}
+            style={"left: #{@context_menu.x}px; bottom: #{@context_menu.y_from_bottom}px;"}
           >
             <%= for action <- @context_menu.actions do %>
               <%= if action == :scry do %>
@@ -1652,7 +1683,7 @@ defmodule GoodtapWeb.GameLive do
                 end
               %>
               <%= for card <- cards do %>
-                <% display_card = if is_find, do: Map.put(card, "known", true), else: card %>
+                <% display_card = if is_find, do: Map.put(card, "known", %{"host" => true, "opponent" => true}), else: card %>
                 <div
                   class="shrink-0 cursor-pointer hover:scale-105 transition-transform"
                   data-draggable="true"
