@@ -70,7 +70,11 @@ defmodule GoodtapWeb.GameLive do
          # Multi-card selection
          selected_cards: MapSet.new(),
          # Game log
-         log_open: false
+         log_open: false,
+         # Pending log entries for debouncing rapid counter changes.
+         # Map of key => %{message_fn: fn(delta) -> string, delta: int, timer: ref}
+         # Flushed after 1s of inactivity per key.
+         pending_log: %{}
        )}
     end
   end
@@ -117,6 +121,19 @@ defmodule GoodtapWeb.GameLive do
       end)
 
     {:noreply, assign(socket, token_search: nil)}
+  end
+
+  def handle_info({:flush_log, key}, socket) do
+    pending = socket.assigns.pending_log
+    case Map.get(pending, key) do
+      nil -> {:noreply, socket}
+      %{delta: delta, message_fn: message_fn} ->
+        message = message_fn.(delta, socket.assigns.game_state, socket.assigns.my_role)
+        new_state = append_log(socket.assigns.game_state, socket.assigns.my_role, message)
+        {:ok, _} = Games.update_game_state(socket.assigns.game, new_state)
+        Games.broadcast_game_state(socket.assigns.game.id, new_state)
+        {:noreply, assign(socket, game_state: new_state, pending_log: Map.delete(pending, key))}
+    end
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
@@ -443,13 +460,16 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_event("adjust_life", %{"delta" => delta}, socket) do
     delta = String.to_integer(delta)
-    apply_action(socket, fn state, player ->
-      old_life = get_in(state, [player, "life"]) || 20
-      {:ok, new_state} = Actions.adjust_life(state, player, delta)
-      new_life = get_in(new_state, [player, "life"])
-      sign = if delta >= 0, do: "+", else: ""
-      {:ok, append_log(new_state, player, "life #{old_life} → #{new_life} (#{sign}#{delta})")}
+    old_life = get_in(socket.assigns.game_state, [socket.assigns.my_role, "life"]) || 20
+    socket = apply_action_inline(socket, fn state, player ->
+      Actions.adjust_life(state, player, delta)
     end)
+    socket = schedule_log(socket, "life", delta, fn total_delta, state, player ->
+      new_life = get_in(state, [player, "life"])
+      sign = if total_delta >= 0, do: "+", else: ""
+      "life #{old_life} → #{new_life} (#{sign}#{total_delta})"
+    end)
+    {:noreply, socket}
   end
 
   def handle_event("add_tracker", %{"name" => name}, socket) do
@@ -465,7 +485,19 @@ defmodule GoodtapWeb.GameLive do
   def handle_event("adjust_tracker", %{"index" => idx, "delta" => delta}, socket) do
     idx = String.to_integer(idx)
     delta = String.to_integer(delta)
-    apply_action(socket, fn state, player -> Actions.adjust_tracker(state, player, idx, delta) end)
+    trackers = get_in(socket.assigns.game_state, [socket.assigns.my_role, "trackers"]) || []
+    tracker = Enum.at(trackers, idx)
+    tracker_name = tracker && tracker["name"] || "tracker"
+    old_val = tracker && tracker["value"] || 0
+    socket = apply_action_inline(socket, fn state, player ->
+      Actions.adjust_tracker(state, player, idx, delta)
+    end)
+    socket = schedule_log(socket, "tracker-#{idx}", delta, fn total_delta, state, player ->
+      new_val = get_in(state, [player, "trackers"]) |> Enum.at(idx) |> then(&(&1 && &1["value"] || 0))
+      sign = if total_delta >= 0, do: "+", else: ""
+      "#{tracker_name} #{old_val} → #{new_val} (#{sign}#{total_delta})"
+    end)
+    {:noreply, socket}
   end
 
   def handle_event("remove_tracker", %{"index" => idx}, socket) do
@@ -502,14 +534,22 @@ defmodule GoodtapWeb.GameLive do
   def handle_event("adjust_counter", %{"instance_id" => id, "counter_index" => idx, "delta" => delta}, socket) do
     idx = String.to_integer(idx)
     delta = String.to_integer(delta)
-    name = card_name_in_zone(socket, id)
-    apply_action(socket, fn state, player ->
-      card = find_card_in_zone(state, player, "battlefield", id)
-      counter_name = card && Enum.at(card["counters"] || [], idx) |> then(&(&1 && &1["name"])) || "counter"
-      sign = if delta >= 0, do: "+", else: ""
-      {:ok, new_state} = Actions.update_counter(state, player, id, idx, delta)
-      {:ok, append_log(new_state, player, "#{name}: #{sign}#{delta} #{counter_name}")}
+    card_name = card_name_in_zone(socket, id)
+    old_counter = find_card_in_zone(socket.assigns.game_state, socket.assigns.my_role, "battlefield", id)
+      |> then(&(&1 && Enum.at(&1["counters"] || [], idx)))
+    counter_name = old_counter && old_counter["name"] || "counter"
+    old_val = old_counter && old_counter["value"] || 0
+    socket = apply_action_inline(socket, fn state, player ->
+      Actions.update_counter(state, player, id, idx, delta)
     end)
+    socket = schedule_log(socket, "counter-#{id}-#{idx}", delta, fn total_delta, state, player ->
+      new_val = find_card_in_zone(state, player, "battlefield", id)
+        |> then(&(&1 && Enum.at(&1["counters"] || [], idx)))
+        |> then(&(&1 && &1["value"] || 0))
+      sign = if total_delta >= 0, do: "+", else: ""
+      "#{card_name}: #{counter_name} #{old_val} → #{new_val} (#{sign}#{total_delta})"
+    end)
+    {:noreply, socket}
   end
 
   def handle_event("remove_counter", %{"instance_id" => id, "counter_index" => idx}, socket) do
@@ -910,6 +950,26 @@ defmodule GoodtapWeb.GameLive do
     {:ok, _} = Games.update_game_state(game, new_state)
     Games.broadcast_game_state(game.id, new_state)
     assign(socket, game_state: new_state)
+  end
+
+  # Schedule a debounced log entry for a counter-style event (life, tracker, card counter).
+  # If the same key fires again within 1s, the timer resets and the delta accumulates.
+  # The message_fn is only taken from the FIRST call in a burst — this preserves the
+  # pre-burst "old value" captured by the caller before apply_action_inline runs.
+  # After 1s of silence, :flush_log is sent and a single combined entry is written.
+  defp schedule_log(socket, key, delta, message_fn) do
+    pending = socket.assigns.pending_log
+    entry = Map.get(pending, key, %{delta: 0, timer: nil, message_fn: message_fn})
+
+    if entry.timer, do: Process.cancel_timer(entry.timer)
+    timer = Process.send_after(self(), {:flush_log, key}, 1000)
+    new_delta = entry.delta + delta
+
+    assign(socket, pending_log: Map.put(pending, key, %{
+      delta: new_delta,
+      message_fn: entry.message_fn,  # keep the original message_fn (has the pre-burst old value)
+      timer: timer
+    }))
   end
 
   defp append_log(state, player, message) do
