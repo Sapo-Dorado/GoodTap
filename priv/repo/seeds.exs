@@ -26,28 +26,32 @@ artwork_raw =
 IO.puts("Parsing unique-artwork JSON...")
 artwork_cards = Jason.decode!(artwork_raw)
 
-IO.puts("Grouping #{length(artwork_cards)} printings by card name...")
+IO.puts("Grouping #{length(artwork_cards)} printings by oracle_id...")
 
-# Group all printings by name, preserving insertion order.
-# The first printing for each name is used as the canonical card data.
+# Group printings by oracle_id rather than name. This correctly handles tokens
+# that share a name but have different oracle text (e.g. two different "Samurai"
+# tokens with different abilities) — they get separate card rows. For non-token
+# cards, oracle_id also groups correctly across all printings of the same card.
+# The first printing for each oracle_id is used as the canonical card data.
 cards_by_name =
   Enum.reduce(artwork_cards, %{}, fn card, acc ->
     # Skip art series cards — they are memorabilia collectibles, not playable cards
     if card["layout"] == "art_series" do
       acc
     else
-    name = card["name"]
-    printing = %{
-      "id" => card["id"],
-      "set_code" => card["set"],
-      "collector_number" => card["collector_number"],
-      "image_uris" => card["image_uris"] || get_in(card, ["card_faces", Access.at(0), "image_uris"])
-    }
+      # Use oracle_id as the grouping key; fall back to card id if missing
+      key = card["oracle_id"] || card["id"]
+      printing = %{
+        "id" => card["id"],
+        "set_code" => card["set"],
+        "collector_number" => card["collector_number"],
+        "image_uris" => card["image_uris"] || get_in(card, ["card_faces", Access.at(0), "image_uris"])
+      }
 
-    case Map.get(acc, name) do
-      nil -> Map.put(acc, name, {card, [printing]})
-      {first, printings} -> Map.put(acc, name, {first, printings ++ [printing]})
-    end
+      case Map.get(acc, key) do
+        nil -> Map.put(acc, key, {card, [printing]})
+        {first, printings} -> Map.put(acc, key, {first, printings ++ [printing]})
+      end
     end
   end)
 
