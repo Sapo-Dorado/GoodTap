@@ -22,30 +22,30 @@ defmodule Goodtap.Decks do
 
   # Returns a list of card names that could not be found in the catalog.
   defp insert_deck_cards(deck, card_list) do
-    Enum.reduce(card_list, [], fn entry, not_found ->
-      %{name: name, quantity: qty, board: board} = entry
-      set_code = Map.get(entry, :set_code)
-      collector_number = Map.get(entry, :collector_number)
+    card_lookup = Catalog.find_cards_for_deck(card_list)
 
-      case Catalog.find_card_for_deck(name, set_code, collector_number) do
-        {nil, _} ->
-          [name | not_found]
+    {not_found, to_insert} =
+      Enum.reduce(card_list, {[], []}, fn entry, {nf, ins} ->
+        case Map.get(card_lookup, entry.name) do
+          {nil, _} -> {[entry.name | nf], ins}
+          {card, printing_id} ->
+            row = %{
+              deck_id: deck.id,
+              card_name: card.name,
+              printing_id: printing_id,
+              quantity: entry.quantity,
+              board: entry.board
+            }
+            {nf, [row | ins]}
+        end
+      end)
 
-        {card, printing_id} ->
-          %DeckCard{}
-          |> DeckCard.changeset(%{
-            deck_id: deck.id,
-            card_name: card.name,
-            printing_id: printing_id,
-            quantity: qty,
-            board: board
-          })
-          |> Repo.insert(on_conflict: :replace_all, conflict_target: [:deck_id, :card_name, :board])
+    Repo.insert_all(DeckCard, to_insert,
+      on_conflict: :replace_all,
+      conflict_target: [:deck_id, :card_name, :board]
+    )
 
-          not_found
-      end
-    end)
-    |> Enum.reverse()
+    not_found |> Enum.reverse()
   end
 
   def create_deck_from_text(user, name, text) do

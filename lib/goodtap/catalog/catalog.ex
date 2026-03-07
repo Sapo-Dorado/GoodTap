@@ -101,6 +101,74 @@ defmodule Goodtap.Catalog do
   #   (default art) if the printing isn't in our DB.
   #
   # Returns {card, printing_id} — printing_id may be nil.
+  @doc """
+  Bulk version of find_card_for_deck. Takes a list of entries with :name, :set_code,
+  :collector_number keys. Returns a map of raw_name => {card, printing_id | nil}.
+  Uses two queries total: one exact-match bulk, one prefix-match bulk for the remainder.
+  """
+  def find_cards_for_deck(entries) do
+    # Normalize names the same way find_card_for_deck does
+    normalized = Enum.map(entries, fn entry ->
+      front_name = entry.name |> String.split("/") |> List.first() |> String.trim()
+      {entry.name, front_name, entry}
+    end)
+
+    all_front_names = Enum.map(normalized, fn {_, front, _} -> String.downcase(front) end) |> Enum.uniq()
+
+    # Query 1: exact case-insensitive match for all names at once
+    exact_cards =
+      Card
+      |> where([c], fragment("lower(?)", c.name) in ^all_front_names and not c.is_token)
+      |> Repo.all()
+
+    exact_map = Map.new(exact_cards, fn c -> {String.downcase(c.name), c} end)
+
+    # Find which front names had no exact match
+    unmatched_fronts =
+      all_front_names
+      |> Enum.reject(&Map.has_key?(exact_map, &1))
+
+    # Query 2: prefix match for unmatched names (handles DFC like "The Modern Age // Vector Glider")
+    prefix_map =
+      if unmatched_fronts == [] do
+        %{}
+      else
+        unmatched_fronts
+        |> Enum.flat_map(fn front ->
+          Card
+          |> where([c], ilike(c.name, ^"#{front}%") and not c.is_token)
+          |> Repo.all()
+          |> case do
+            [card] -> [{front, card}]
+            _ -> []
+          end
+        end)
+        |> Map.new()
+      end
+
+    # Build result map keyed by original raw name
+    Enum.reduce(normalized, %{}, fn {raw_name, front_name, entry}, acc ->
+      lower_front = String.downcase(front_name)
+      card = Map.get(exact_map, lower_front) || Map.get(prefix_map, lower_front)
+
+      result =
+        case card do
+          nil -> {nil, nil}
+          card ->
+            printing_id =
+              if entry[:set_code] && entry[:collector_number] do
+                printing = Enum.find(card.printings, fn p ->
+                  p["set_code"] == entry[:set_code] && p["collector_number"] == entry[:collector_number]
+                end)
+                printing && printing["id"]
+              end
+            {card, printing_id}
+        end
+
+      Map.put(acc, raw_name, result)
+    end)
+  end
+
   def find_card_for_deck(raw_name, set_code \\ nil, collector_number \\ nil) do
     # Step 1: take everything before the first "/" to handle both "Name / Back" and "Name // Back" formats
     name = raw_name |> String.split("/") |> List.first() |> String.trim()
