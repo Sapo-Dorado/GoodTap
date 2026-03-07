@@ -10,11 +10,46 @@ function clampMenuPos(x, y) {
   };
 }
 
-// Battlefield hook: handles right-click context menu and drag-drop for cards on the battlefield
+// Show a red target reticle on a card for 5 seconds
+function showTargetReticle(instanceId) {
+  // Try own card first, then opponent card
+  const el = document.getElementById(`card-${instanceId}`) ||
+             document.getElementById(`opp-card-${instanceId}`);
+  if (!el) return;
+
+  const existing = el.querySelector(".target-reticle");
+  if (existing) {
+    clearTimeout(existing._timer);
+    existing.remove();
+  }
+
+  const reticle = document.createElement("div");
+  reticle.className = "target-reticle";
+  reticle.style.cssText = `
+    position: absolute; inset: 0; z-index: 20; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+  `;
+  reticle.innerHTML = `
+    <svg viewBox="0 0 100 100" style="width: 60%; height: 60%; opacity: 0.9;">
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#ef4444" stroke-width="5"/>
+      <line x1="50" y1="5"  x2="50" y2="25" stroke="#ef4444" stroke-width="5"/>
+      <line x1="50" y1="75" x2="50" y2="95" stroke="#ef4444" stroke-width="5"/>
+      <line x1="5"  y1="50" x2="25" y2="50" stroke="#ef4444" stroke-width="5"/>
+      <line x1="75" y1="50" x2="95" y2="50" stroke="#ef4444" stroke-width="5"/>
+    </svg>
+  `;
+
+  el.style.position = "absolute"; // ensure parent is positioned
+  el.appendChild(reticle);
+
+  reticle._timer = setTimeout(() => reticle.remove(), 5000);
+}
+
+// Battlefield hook: handles right-click context menu and target reticle
 const Battlefield = {
   mounted() {
     const onContextmenu = (e) => {
-      const card = e.target.closest("[data-draggable]");
+      const card = e.target.closest("[data-draggable], [data-hoverable]");
       if (!card) return;
       e.preventDefault();
 
@@ -22,7 +57,6 @@ const Battlefield = {
       const owner = card.dataset.owner;
       const pos = clampMenuPos(e.clientX, e.clientY);
 
-      // Only show context menu for own cards
       this.pushEvent("context_menu", {
         instance_id: card.dataset.instanceId,
         zone: zone,
@@ -33,7 +67,7 @@ const Battlefield = {
     };
 
     const onContextmenuBattlefield = (e) => {
-      const card = e.target.closest("[data-draggable]");
+      const card = e.target.closest("[data-draggable], [data-hoverable]");
       if (card) return; // Handled above
 
       e.preventDefault();
@@ -63,6 +97,10 @@ const Battlefield = {
 
     document.addEventListener("contextmenu", onContextmenu);
     this.el.addEventListener("contextmenu", onContextmenuBattlefield);
+
+    this.handleEvent("target_card", ({ instance_id }) => {
+      showTargetReticle(instance_id);
+    });
 
     this._cleanup = () => {
       document.removeEventListener("contextmenu", onContextmenu);

@@ -58,7 +58,7 @@ const DragDrop = {
         this.hoveredCard = null;
         return;
       }
-      const card = e.target.closest("[data-draggable]");
+      const card = e.target.closest("[data-draggable], [data-hoverable]");
       if (card) {
         this.hoveredCard = {
           instanceId: card.dataset.instanceId,
@@ -74,7 +74,7 @@ const DragDrop = {
     };
 
     const onMouseout = (e) => {
-      const card = e.target.closest("[data-draggable]");
+      const card = e.target.closest("[data-draggable], [data-hoverable]");
       if (card) {
         const leavingCard = !card.contains(e.relatedTarget);
         const enteringNoHotkey = e.relatedTarget && e.relatedTarget.closest("[data-no-hotkey]");

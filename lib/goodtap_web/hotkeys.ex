@@ -1,5 +1,6 @@
 defmodule GoodtapWeb.Hotkeys do
   @hotkeys %{
+    target_card: "e",
     tap: "space",
     move_to_graveyard: "d",
     move_to_exile: "s",
@@ -31,6 +32,10 @@ defmodule GoodtapWeb.Hotkeys do
 
   def valid_actions_for("battlefield") do
     [:tap, :move_to_graveyard, :move_to_exile, :move_to_deck_top, :move_to_deck_bottom, :flip_card, :add_counter, :copy_card]
+  end
+
+  def valid_actions_for_opponent_battlefield do
+    [:copy_opponent_card, :target_card]
   end
 
   def valid_actions_for("deck") do
@@ -70,5 +75,6 @@ defmodule GoodtapWeb.Hotkeys do
   def action_label(:find_card), do: "Find Card"
   def action_label(:mulligan), do: "Mulligan"
   def action_label(:copy_opponent_card), do: "Copy Card"
+  def action_label(:target_card), do: "Target"
   def action_label(other), do: to_string(other)
 end

@@ -147,10 +147,9 @@ defmodule GoodtapWeb.GameLive do
     y = params["y"]
     owner = params["owner"]
 
-    # For opponent cards on the battlefield, only allow copy
     actions =
       if owner && owner != socket.assigns.my_role && zone == "battlefield" do
-        [:copy_opponent_card]
+        Hotkeys.valid_actions_for_opponent_battlefield()
       else
         Hotkeys.valid_actions_for(zone)
       end
@@ -196,7 +195,8 @@ defmodule GoodtapWeb.GameLive do
 
   # ─── Keyboard Shortcuts ───────────────────────────────────────────────────
 
-  def handle_event("hotkey", %{"key" => key, "instance_id" => id, "zone" => zone}, socket) do
+  def handle_event("hotkey", %{"key" => key, "instance_id" => id, "zone" => zone} = params, socket) do
+    owner = params["owner"]
     selected = socket.assigns.selected_cards
     has_selection = not MapSet.equal?(selected, MapSet.new())
 
@@ -291,11 +291,25 @@ defmodule GoodtapWeb.GameLive do
             {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
 
           "k" when not is_nil(id) ->
-            name = card_name_in_zone(socket, id)
-            apply_action(socket, fn st, p ->
-              {:ok, new_st} = Actions.copy_card(st, p, id)
-              {:ok, append_log(new_st, p, "copied #{name}")}
-            end)
+            if owner == socket.assigns.my_role do
+              name = card_name_in_zone(socket, id)
+              apply_action(socket, fn st, p ->
+                {:ok, new_st} = Actions.copy_card(st, p, id)
+                {:ok, append_log(new_st, p, "copied #{name}")}
+              end)
+            else
+              opp_role = socket.assigns.opp_role
+              name = get_in(socket.assigns.game_state, [opp_role, "zones", "battlefield"])
+                |> Enum.find(&(&1["instance_id"] == id))
+                |> then(&(&1 && &1["name"] || "card"))
+              apply_action(socket, fn st, p ->
+                {:ok, new_st} = Actions.copy_opponent_card(st, p, id)
+                {:ok, append_log(new_st, p, "copied opponent's #{name}")}
+              end)
+            end
+
+          "e" when not is_nil(id) ->
+            {:noreply, push_event(socket, "target_card", %{instance_id: id})}
 
           "w" ->
             {:noreply, assign(socket, token_search: true)}
@@ -408,6 +422,10 @@ defmodule GoodtapWeb.GameLive do
       {:ok, new_state} = Actions.copy_opponent_card(state, player, id)
       {:ok, append_log(new_state, player, "copied #{name}")}
     end)
+  end
+
+  def handle_event("action", %{"type" => "target_card", "instance_id" => id}, socket) do
+    {:noreply, socket |> assign(context_menu: nil) |> push_event("target_card", %{instance_id: id})}
   end
 
   def handle_event("action", %{"type" => "draw_face_down"}, socket) do
@@ -1079,8 +1097,13 @@ defmodule GoodtapWeb.GameLive do
         >
           <%= for card <- zone_cards(@opp, "battlefield") do %>
             <div
+              id={"opp-card-#{card["instance_id"]}"}
               class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "is-tapped", else: "")]}
               style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
+              data-hoverable="true"
+              data-instance-id={card["instance_id"]}
+              data-zone="battlefield"
+              data-owner={@opp_role}
             >
               <%!-- counter-rotate so cards appear right-side-up inside the 180° flipped field --%>
               <div
