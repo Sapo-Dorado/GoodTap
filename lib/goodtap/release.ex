@@ -9,11 +9,10 @@ defmodule Goodtap.Release do
     end
   end
 
-  def seed(json_path \\ nil) do
+  def seed(artwork_path \\ nil) do
     load_app()
-    if json_path, do: System.put_env("SEEDS_JSON_PATH", json_path)
+    if artwork_path, do: System.put_env("ARTWORK_JSON_PATH", artwork_path)
 
-    # Req uses Finch under the hood; start it if not already running
     {:ok, _} = Application.ensure_all_started(:req)
 
     for repo <- repos() do
@@ -25,8 +24,7 @@ defmodule Goodtap.Release do
     end
   end
 
-  @cards_json "/var/lib/goodtap/MTG_Cards.json"
-  @printings_json "/var/lib/goodtap/MTG_Printings.json"
+  @artwork_json "/var/lib/goodtap/MTG_Artwork.json"
 
   def force_reset do
     load_app()
@@ -36,7 +34,7 @@ defmodule Goodtap.Release do
     for repo <- repos() do
       {:ok, _, _} =
         Ecto.Migrator.with_repo(repo, fn repo ->
-          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE deck_cards, decks, games, card_printings, cards")
+          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE deck_cards, decks, games, cards")
         end)
     end
 
@@ -49,51 +47,25 @@ defmodule Goodtap.Release do
 
     headers = [{"User-Agent", "GoodTap/1.0"}, {"Accept", "application/json"}]
 
-    # Download oracle cards
-    IO.puts("Fetching latest oracle cards from Scryfall...")
-    {:ok, %{body: meta}} = Req.get("https://api.scryfall.com/bulk-data/oracle-cards", headers: headers)
-    url = meta["download_uri"]
-    IO.puts("Downloading #{url}...")
-    {:ok, %{body: body}} = Req.get(url, headers: headers, receive_timeout: 120_000)
-    File.write!(@cards_json, Jason.encode!(body))
-
-    # Download unique-artwork printings
-    IO.puts("Fetching unique-artwork printings from Scryfall...")
+    IO.puts("Fetching unique-artwork bulk data URI from Scryfall...")
     {:ok, %{body: meta}} = Req.get("https://api.scryfall.com/bulk-data/unique-artwork", headers: headers)
     url = meta["download_uri"]
     IO.puts("Downloading #{url}...")
     {:ok, %{body: body}} = Req.get(url, headers: headers, receive_timeout: 300_000)
-    File.write!(@printings_json, Jason.encode!(body))
+    File.write!(@artwork_json, Jason.encode!(body))
 
-    IO.puts("Truncating games, cards, and printings tables...")
+    IO.puts("Truncating games and cards tables...")
     for repo <- repos() do
       {:ok, _, _} =
         Ecto.Migrator.with_repo(repo, fn repo ->
-          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE games, card_printings, cards")
+          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE games, cards")
         end)
     end
 
-    IO.puts("Seeding oracle cards...")
-    seed(@cards_json)
-
-    IO.puts("Seeding printings...")
-    seed_printings(@printings_json)
+    IO.puts("Seeding cards with printings...")
+    seed(@artwork_json)
 
     IO.puts("Done!")
-  end
-
-  def seed_printings(json_path \\ nil) do
-    load_app()
-    if json_path, do: System.put_env("PRINTINGS_JSON_PATH", json_path)
-    {:ok, _} = Application.ensure_all_started(:req)
-
-    for repo <- repos() do
-      {:ok, _, _} =
-        Ecto.Migrator.with_repo(repo, fn _repo ->
-          seeds = Application.app_dir(:goodtap, "priv/repo/seeds_printings.exs")
-          Code.eval_file(seeds)
-        end)
-    end
   end
 
   def rollback(repo, version) do

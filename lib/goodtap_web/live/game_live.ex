@@ -1725,7 +1725,8 @@ defmodule GoodtapWeb.GameLive do
           <.live_component
             module={GoodtapWeb.CardSearchComponent}
             id="token-search"
-            token_only={true}
+            filter={:tokens_only}
+            show_filter_toggle={true}
             on_select={:token_selected}
           />
         </div>

@@ -70,6 +70,7 @@ defmodule GoodtapWeb.Router do
       live "/games/:id/setup", GameSetupLive, :show
       live "/games/join/:token", GameJoinLive, :show
       live "/decks", DeckListLive, :index
+      live "/decks/:id", DeckLive, :show
     end
 
     live_session :game,

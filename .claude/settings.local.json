@@ -17,7 +17,8 @@
       "WebFetch(domain:nixos.asia)",
       "WebFetch(domain:mich-murphy.com)",
       "WebFetch(domain:nixos.wiki)",
-      "WebFetch(domain:nix.dev)"
+      "WebFetch(domain:nix.dev)",
+      "Bash(ls:*)"
     ]
   }
 }

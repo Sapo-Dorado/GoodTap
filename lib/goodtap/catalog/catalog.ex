@@ -2,14 +2,16 @@ defmodule Goodtap.Catalog do
   import Ecto.Query, warn: false
   alias Goodtap.Repo
   alias Goodtap.Catalog.Card
-  alias Goodtap.Catalog.CardPrinting
 
   def get_card!(id), do: Repo.get!(Card, id)
 
   def get_card(id), do: Repo.get(Card, id)
 
   def get_card_by_name(name) do
-    Repo.get_by(Card, name: name)
+    Card
+    |> where([c], c.name == ^name and not c.is_token)
+    |> limit(1)
+    |> Repo.one()
   end
 
   def search_cards(query, limit \\ 20) do
@@ -23,16 +25,17 @@ defmodule Goodtap.Catalog do
   end
 
   # Returns {results, total_count} for display "Showing X of Y"
+  # filter: :all | :tokens_only | :no_tokens
   def search_cards_paged(query, opts \\ []) do
     limit = Keyword.get(opts, :limit, 20)
-    token_only = Keyword.get(opts, :token_only, false)
+    filter = Keyword.get(opts, :filter, :all)
     search = "%#{query}%"
 
     base =
-      if token_only do
-        Card |> where([c], c.is_token and ilike(c.name, ^search))
-      else
-        Card |> where([c], ilike(c.name, ^search))
+      case filter do
+        :tokens_only -> Card |> where([c], c.is_token and ilike(c.name, ^search))
+        :no_tokens -> Card |> where([c], not c.is_token and ilike(c.name, ^search))
+        :all -> Card |> where([c], ilike(c.name, ^search))
       end
 
     total = Repo.aggregate(base, :count, :id)
@@ -63,47 +66,71 @@ defmodule Goodtap.Catalog do
     |> Repo.all()
   end
 
-  def get_printing(id), do: Repo.get(CardPrinting, id)
-
-  def get_printing_by_set(set_code, collector_number) do
-    CardPrinting
-    |> where([p], p.set_code == ^set_code and p.collector_number == ^collector_number)
-    |> limit(1)
-    |> Repo.one()
+  # Find a specific printing by its Scryfall ID within a card's printings array
+  def get_printing(card_name, printing_id) when is_binary(card_name) and is_binary(printing_id) do
+    case get_card_by_name(card_name) do
+      nil -> nil
+      card -> Enum.find(card.printings, &(&1["id"] == printing_id))
+    end
   end
 
+  def get_printing(nil, _), do: nil
+  def get_printing(_, nil), do: nil
+
+  # Return all printings for a card (already embedded on the card row)
   def get_printings_for_card(card_name) do
-    CardPrinting
-    |> where([p], p.card_name == ^card_name)
-    |> order_by([p], [p.set_code, p.collector_number])
-    |> Repo.all()
+    case get_card_by_name(card_name) do
+      nil -> []
+      card -> card.printings
+    end
   end
 
-  # Find a card by name for deck import.
-  # Always searches by the front face name only (before any " //") since Scryfall
-  # is inconsistent about whether it stores the full DFC name or just the front.
-  # Falls back to a unique contains match if no exact hit.
-  def find_card_for_deck(raw_name) do
+  # Find a card and resolve an optional printing for deck import.
+  #
+  # Name matching:
+  #   1. Strip everything after "//" — decklists may include the back-face name but
+  #      we only need the front face to search. Works for all formats.
+  #   2. ILIKE contains search on non-token cards. Only accepts the result if exactly
+  #      one card matches — avoids false positives on ambiguous partial names.
+  #      DFC cards work naturally: "The Modern Age" matches "The Modern Age // Vector Glider".
+  #
+  # Printing resolution:
+  #   If set_code + collector_number are provided (e.g. from "(RNA) 244" in the
+  #   decklist), we look for a matching printing in card.printings. If found we store
+  #   that printing_id on the deck_card so the correct art is shown. Falls back to nil
+  #   (default art) if the printing isn't in our DB.
+  #
+  # Returns {card, printing_id} — printing_id may be nil.
+  def find_card_for_deck(raw_name, set_code \\ nil, collector_number \\ nil) do
+    # Step 1: strip back-face name for DFC cards
     name = raw_name |> String.split("//") |> List.first() |> String.trim()
 
-    # 1. Case-insensitive exact match on front face name
-    exact =
-      Card
-      |> where([c], fragment("lower(?) = lower(?)", c.name, ^name) and not c.is_token)
-      |> Repo.all()
+    # Step 2: starts-with ILIKE search on non-token cards. Only accepts a single match.
+    # Oracle cards guarantee the front-face name is unique, so "The Modern Age" matches
+    # exactly one row ("The Modern Age // Vector Glider") — no ambiguity with DFC cards.
+    search = "#{name}%"
 
-    case exact do
-      [card | _] ->
-        card
+    card =
+      case Card |> where([c], ilike(c.name, ^search) and not c.is_token) |> Repo.all() do
+        [card] -> card
+        _ -> nil
+      end
 
-      [] ->
-        # 2. Unique contains match — only use if exactly one result
-        search = "%#{name}%"
+    case card do
+      nil ->
+        {nil, nil}
 
-        case Card |> where([c], ilike(c.name, ^search) and not c.is_token) |> Repo.all() do
-          [card] -> card
-          _ -> nil
-        end
+      card ->
+        # Step 4: resolve printing from set+collector if provided
+        printing_id =
+          if set_code && collector_number do
+            printing = Enum.find(card.printings, fn p ->
+              p["set_code"] == set_code && p["collector_number"] == collector_number
+            end)
+            printing && printing["id"]
+          end
+
+        {card, printing_id}
     end
   end
 end

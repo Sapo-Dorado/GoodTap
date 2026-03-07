@@ -20,26 +20,18 @@ defmodule Goodtap.Decks do
     |> Repo.preload(:deck_cards)
   end
 
+  # Returns a list of card names that could not be found in the catalog.
   defp insert_deck_cards(deck, card_list) do
-    Enum.each(card_list, fn entry ->
+    Enum.reduce(card_list, [], fn entry, not_found ->
       %{name: name, quantity: qty, board: board} = entry
       set_code = Map.get(entry, :set_code)
       collector_number = Map.get(entry, :collector_number)
 
-      case Catalog.find_card_for_deck(name) do
-        nil ->
-          :ok
+      case Catalog.find_card_for_deck(name, set_code, collector_number) do
+        {nil, _} ->
+          [name | not_found]
 
-        card ->
-          # Resolve printing: prefer exact set+collector match, fall back to nil
-          printing_id =
-            if set_code && collector_number do
-              case Catalog.get_printing_by_set(set_code, collector_number) do
-                nil -> nil
-                printing -> printing.id
-              end
-            end
-
+        {card, printing_id} ->
           %DeckCard{}
           |> DeckCard.changeset(%{
             deck_id: deck.id,
@@ -49,21 +41,27 @@ defmodule Goodtap.Decks do
             board: board
           })
           |> Repo.insert(on_conflict: :replace_all, conflict_target: [:deck_id, :card_name, :board])
+
+          not_found
       end
     end)
+    |> Enum.reverse()
   end
 
   def create_deck_from_text(user, name, text) do
     with {:ok, %{name: deck_name, cards: card_list}} <- Plaintext.import(name, text) do
-      Repo.transact(fn ->
+      case Repo.transact(fn ->
         with {:ok, deck} <-
                %Deck{}
                |> Deck.changeset(%{name: deck_name, user_id: user.id})
                |> Repo.insert() do
-          insert_deck_cards(deck, card_list)
-          {:ok, Repo.preload(deck, :deck_cards)}
+          not_found = insert_deck_cards(deck, card_list)
+          {:ok, {Repo.preload(deck, :deck_cards), not_found}}
         end
-      end)
+      end) do
+        {:ok, {deck, not_found}} -> {:ok, deck, not_found}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -90,6 +88,12 @@ defmodule Goodtap.Decks do
       on_conflict: [inc: [quantity: 1]],
       conflict_target: [:deck_id, :card_name, :board]
     )
+  end
+
+  def update_deck_card_printing(deck_card, printing_id) do
+    deck_card
+    |> DeckCard.changeset(%{printing_id: printing_id})
+    |> Repo.update()
   end
 
   def update_deck_card_quantity(deck_card, quantity) when quantity > 0 do

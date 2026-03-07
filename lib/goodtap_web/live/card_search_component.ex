@@ -6,9 +6,13 @@ defmodule GoodtapWeb.CardSearchComponent do
       <.live_component
         module={GoodtapWeb.CardSearchComponent}
         id="card-search"
-        token_only={false}
+        filter={:no_tokens}
+        show_filter_toggle={false}
         on_select="card_selected"
       />
+
+  filter: :all | :tokens_only | :no_tokens (default: :all)
+  show_filter_toggle: show buttons to switch filter at runtime (default: false)
 
   The parent receives a `on_select` event with:
       %{"card_id" => card.id, "card_name" => card.name, "printing_id" => printing_id_or_nil}
@@ -25,11 +29,9 @@ defmodule GoodtapWeb.CardSearchComponent do
        query: "",
        results: [],
        total: 0,
-       token_only: false,
-       # Map of card_id -> selected printing_id
-       selected_printings: %{},
-       # Map of card_id -> list of printings (loaded lazily)
-       printings: %{}
+       filter: :all,
+       show_filter_toggle: false,
+       selected_printings: %{}
      )}
   end
 
@@ -37,48 +39,42 @@ defmodule GoodtapWeb.CardSearchComponent do
     socket =
       socket
       |> assign(:on_select, assigns.on_select)
-      |> assign(:token_only, Map.get(assigns, :token_only, false))
+      |> assign(:show_filter_toggle, Map.get(assigns, :show_filter_toggle, false))
+
+    # Only set filter from props on first mount, not on subsequent updates,
+    # so the user's runtime filter choice is preserved.
+    socket =
+      if socket.assigns.query == "" do
+        assign(socket, :filter, Map.get(assigns, :filter, :all))
+      else
+        socket
+      end
 
     {:ok, socket}
   end
 
-  def handle_event("search", %{"query" => query} = params, socket) do
-    token_only =
-      case Map.get(params, "token_only") do
-        "true" -> true
-        true -> true
-        _ -> socket.assigns.token_only
-      end
-
-    {results, total} =
+  def handle_event("search", %{"query" => query}, socket) do
+{results, total} =
       if String.trim(query) == "" do
         {[], 0}
       else
-        Catalog.search_cards_paged(query, limit: @default_limit, token_only: token_only)
+        Catalog.search_cards_paged(query, limit: @default_limit, filter: socket.assigns.filter)
       end
 
-    {:noreply, assign(socket, query: query, results: results, total: total, token_only: token_only)}
+    {:noreply, assign(socket, query: query, results: results, total: total)}
   end
 
-  def handle_event("toggle_token_only", _params, socket) do
-    token_only = !socket.assigns.token_only
+  def handle_event("set_filter", %{"filter" => filter}, socket) do
+    filter = String.to_existing_atom(filter)
+
     {results, total} =
       if String.trim(socket.assigns.query) == "" do
         {[], 0}
       else
-        Catalog.search_cards_paged(socket.assigns.query, limit: @default_limit, token_only: token_only)
+        Catalog.search_cards_paged(socket.assigns.query, limit: @default_limit, filter: filter)
       end
 
-    {:noreply, assign(socket, token_only: token_only, results: results, total: total)}
-  end
-
-  def handle_event("load_printings", %{"card_name" => card_name, "card_id" => card_id}, socket) do
-    printings =
-      Map.put_new_lazy(socket.assigns.printings, card_id, fn ->
-        Catalog.get_printings_for_card(card_name)
-      end)
-
-    {:noreply, assign(socket, printings: printings)}
+    {:noreply, assign(socket, filter: filter, results: results, total: total)}
   end
 
   def handle_event("select_printing", %{"card_id" => card_id, "printing_id" => printing_id}, socket) do
@@ -98,18 +94,17 @@ defmodule GoodtapWeb.CardSearchComponent do
     {:noreply, socket}
   end
 
-  defp card_image(card, selected_printings, printings) do
-    printing_id = Map.get(selected_printings, card.id)
-    card_printings = Map.get(printings, card.id, [])
+  defp card_image(card, selected_printings) do
+    printing_id = Map.get(selected_printings, to_string(card.id))
 
     selected_printing =
-      if printing_id do
-        Enum.find(card_printings, &(&1.id == printing_id))
+      if printing_id && printing_id != "" do
+        Enum.find(card.printings, &(&1["id"] == printing_id))
       end
 
     cond do
       selected_printing ->
-        get_in(selected_printing.image_uris, ["normal"]) || "/images/CardBack.png"
+        get_in(selected_printing, ["image_uris", "normal"]) || "/images/CardBack.png"
       true ->
         get_in(card.data, ["image_uris", "normal"]) ||
           get_in(card.data, ["card_faces", Access.at(0), "image_uris", "normal"]) ||
@@ -121,39 +116,45 @@ defmodule GoodtapWeb.CardSearchComponent do
     ~H"""
     <div class="flex flex-col gap-3">
       <%!-- Search input --%>
-      <div class="flex gap-2 items-center">
+      <form phx-change="search" phx-target={@myself}>
         <input
           type="text"
           value={@query}
-          phx-change="search"
-          phx-target={@myself}
           phx-debounce="200"
           name="query"
           placeholder="Search cards..."
-          class="input input-bordered flex-1 bg-gray-700"
+          class="input input-bordered w-full bg-gray-700"
           autofocus
         />
-        <label
-          :if={!@token_only}
-          class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none whitespace-nowrap"
-        >
-          <input
-            type="checkbox"
-            checked={@token_only}
-            phx-click="toggle_token_only"
-            phx-target={@myself}
-            class="checkbox checkbox-sm"
-          />
-          Tokens only
-        </label>
+      </form>
+
+      <%!-- Filter toggle --%>
+      <div :if={@show_filter_toggle} class="flex gap-1 text-xs">
+        <button
+          phx-click="set_filter"
+          phx-value-filter="all"
+          phx-target={@myself}
+          class={["px-2 py-1 rounded", if(@filter == :all, do: "bg-purple-600 text-white", else: "bg-gray-700 text-gray-300 hover:bg-gray-600")]}
+        >All</button>
+        <button
+          phx-click="set_filter"
+          phx-value-filter="tokens_only"
+          phx-target={@myself}
+          class={["px-2 py-1 rounded", if(@filter == :tokens_only, do: "bg-purple-600 text-white", else: "bg-gray-700 text-gray-300 hover:bg-gray-600")]}
+        >Tokens only</button>
+        <button
+          phx-click="set_filter"
+          phx-value-filter="no_tokens"
+          phx-target={@myself}
+          class={["px-2 py-1 rounded", if(@filter == :no_tokens, do: "bg-purple-600 text-white", else: "bg-gray-700 text-gray-300 hover:bg-gray-600")]}
+        >No tokens</button>
       </div>
 
       <%!-- Results grid --%>
       <div class="flex flex-wrap gap-3 max-h-72 overflow-y-auto py-1">
         <%= for card <- @results do %>
-          <% img = card_image(card, @selected_printings, @printings) %>
-          <% card_printings = Map.get(@printings, card.id, []) %>
-          <div class="flex flex-col items-center gap-1">
+          <% img = card_image(card, @selected_printings) %>
+          <div class="flex flex-col items-center gap-1 w-24">
             <button
               phx-click="select_card"
               phx-value-card_id={card.id}
@@ -161,41 +162,32 @@ defmodule GoodtapWeb.CardSearchComponent do
               phx-target={@myself}
               class="rounded hover:ring-2 hover:ring-purple-400 transition-all"
               title={card.name}
-              phx-mouseenter="load_printings"
-              phx-value-card_id={card.id}
-              phx-value-card_name={card.name}
-              phx-target={@myself}
             >
-              <img
-                src={img}
-                class="h-28 w-auto rounded shadow"
-                draggable="false"
-              />
+              <img src={img} class="h-28 w-auto rounded shadow" draggable="false" />
             </button>
-            <span class="text-xs text-gray-300 max-w-[4rem] truncate">{card.name}</span>
-            <%!-- Printing selector (shown once printings are loaded) --%>
-            <select
-              :if={length(card_printings) > 1}
-              class="select select-xs bg-gray-700 max-w-[5rem] text-xs"
+            <span class="text-xs text-gray-300 w-full truncate text-center">{card.name}</span>
+            <%!-- Printing selector --%>
+            <form
+              :if={length(card.printings) > 1}
               phx-change="select_printing"
-              phx-value-card_id={card.id}
               phx-target={@myself}
-              name="printing_id"
             >
-              <option value="">Default</option>
-              <%= for p <- card_printings do %>
-                <option
-                  value={p.id}
-                  selected={Map.get(@selected_printings, card.id) == p.id}
-                >
-                  {String.upcase(p.set_code)} #{p.collector_number}
-                </option>
-              <% end %>
-            </select>
+              <input type="hidden" name="card_id" value={card.id} />
+              <select class="select select-xs bg-gray-700 w-full text-xs" name="printing_id">
+                <%= for p <- card.printings do %>
+                  <option
+                    value={p["id"]}
+                    selected={Map.get(@selected_printings, to_string(card.id)) == p["id"]}
+                  >
+                    {String.upcase(p["set_code"])} #{p["collector_number"]}
+                  </option>
+                <% end %>
+              </select>
+            </form>
           </div>
         <% end %>
 
-        <div :if={@query != "" && @results == []} class="text-gray-400 text-sm py-2 text-center w-full">
+        <div :if={@query != "" && @results == []} class="col-span-4 text-gray-400 text-sm py-2 text-center w-full">
           No cards found
         </div>
       </div>
