@@ -102,18 +102,22 @@ defmodule Goodtap.Catalog do
   #
   # Returns {card, printing_id} — printing_id may be nil.
   def find_card_for_deck(raw_name, set_code \\ nil, collector_number \\ nil) do
-    # Step 1: strip back-face name for DFC cards
-    name = raw_name |> String.split("//") |> List.first() |> String.trim()
+    # Step 1: take everything before the first "/" to handle both "Name / Back" and "Name // Back" formats
+    name = raw_name |> String.split("/") |> List.first() |> String.trim()
 
-    # Step 2: starts-with ILIKE search on non-token cards. Only accepts a single match.
-    # Oracle cards guarantee the front-face name is unique, so "The Modern Age" matches
-    # exactly one row ("The Modern Age // Vector Glider") — no ambiguity with DFC cards.
-    search = "#{name}%"
-
+    # Step 2: try exact case-insensitive match first. This handles cards like "Island"
+    # and "Dispel" which would match multiple cards in a starts-with search.
+    # Falls back to starts-with for partial names and DFC front-face names like
+    # "The Modern Age" matching "The Modern Age // Vector Glider".
     card =
-      case Card |> where([c], ilike(c.name, ^search) and not c.is_token) |> Repo.all() do
+      case Card |> where([c], fragment("lower(?)", c.name) == fragment("lower(?)", ^name) and not c.is_token) |> Repo.all() do
         [card] -> card
-        _ -> nil
+        _ ->
+          search = "#{name}%"
+          case Card |> where([c], ilike(c.name, ^search) and not c.is_token) |> Repo.all() do
+            [card] -> card
+            _ -> nil
+          end
       end
 
     case card do
