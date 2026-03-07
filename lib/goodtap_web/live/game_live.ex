@@ -204,82 +204,71 @@ defmodule GoodtapWeb.GameLive do
     # Selection takes full precedence for card-level keys: fire even with no hovered card
     cond do
       has_selection and key == "d" ->
-        names = Enum.map(MapSet.to_list(selected), &card_name_in_zone(socket, &1))
         apply_to_selection(socket, fn st, p, sid ->
           Actions.move_to_graveyard(st, p, sid, "battlefield")
-        end, "#{Enum.join(names, ", ")} → graveyard")
+        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → graveyard" end)
 
       has_selection and key == "s" ->
-        names = Enum.map(MapSet.to_list(selected), &card_name_in_zone(socket, &1))
         apply_to_selection(socket, fn st, p, sid ->
           Actions.move_to_exile(st, p, sid, "battlefield")
-        end, "#{Enum.join(names, ", ")} → exile")
+        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → exile" end)
 
       has_selection and key == "f" ->
-        names = Enum.map(MapSet.to_list(selected), &card_name_in_zone(socket, &1))
         apply_to_selection(socket, fn st, p, sid ->
           Actions.flip_card(st, p, sid, "battlefield")
-        end, "flipped #{Enum.join(names, ", ")}")
+        end, fn st, p -> "flipped #{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")}" end)
 
       has_selection and key == "space" ->
         apply_to_selection(socket, fn st, p, sid -> Actions.tap(st, p, sid) end, nil)
 
       has_selection and key == "t" ->
-        names = Enum.map(MapSet.to_list(selected), &card_name_in_zone(socket, &1))
         apply_to_selection(socket, fn st, p, sid ->
           Actions.move_to_deck(st, p, sid, "battlefield")
-        end, "#{Enum.join(names, ", ")} → deck (top)")
+        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → deck (top)" end)
 
       has_selection and key == "y" ->
-        names = Enum.map(MapSet.to_list(selected), &card_name_in_zone(socket, &1))
         apply_to_selection(socket, fn st, p, sid ->
           Actions.move_to_deck_bottom(st, p, sid, "battlefield")
-        end, "#{Enum.join(names, ", ")} → deck (bottom)")
+        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → deck (bottom)" end)
 
       true ->
         case key do
           "d" when not is_nil(id) ->
-            name = card_name_in_zone(socket, id)
             apply_action(socket, fn st, p ->
               {:ok, new_st} = Actions.move_to_graveyard(st, p, id, zone)
-              {:ok, append_log(new_st, p, "#{name} → graveyard")}
+              {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → graveyard")}
             end)
 
           "s" when not is_nil(id) ->
-            name = card_name_in_zone(socket, id)
             apply_action(socket, fn st, p ->
               {:ok, new_st} = Actions.move_to_exile(st, p, id, zone)
-              {:ok, append_log(new_st, p, "#{name} → exile")}
+              {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → exile")}
             end)
 
           "f" when not is_nil(id) ->
-            name = card_name_in_zone(socket, id)
             apply_action(socket, fn st, p ->
               {:ok, new_st} = Actions.flip_card(st, p, id, zone)
-              {:ok, append_log(new_st, p, "flipped #{name}")}
+              {:ok, append_log(new_st, p, "flipped #{card_name_from_state(new_st, p, id)}")}
             end)
 
           "space" when not is_nil(id) ->
-            name = card_name_in_zone(socket, id)
             apply_action(socket, fn st, p ->
               card = find_card_in_zone(st, p, "battlefield", id)
               verb = if card && card["tapped"], do: "untapped", else: "tapped"
               {:ok, new_st} = Actions.tap(st, p, id)
-              {:ok, append_log(new_st, p, "#{verb} #{name}")}
+              {:ok, append_log(new_st, p, "#{verb} #{card_name_from_state(new_st, p, id)}")}
             end)
 
           "t" when not is_nil(id) ->
-            name = card_name_in_zone(socket, id)
             apply_action(socket, fn st, p ->
               {:ok, new_st} = Actions.move_to_deck(st, p, id, zone)
-              {:ok, append_log(new_st, p, "#{name} → deck (top)")}
+              {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → deck (top)")}
             end)
 
           "y" when not is_nil(id) ->
-            name = card_name_in_zone(socket, id)
             apply_action(socket, fn st, p ->
               {:ok, new_st} = Actions.move_to_deck_bottom(st, p, id, zone)
-              {:ok, append_log(new_st, p, "#{name} → deck (bottom)")}
+              {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → deck (bottom)")}
             end)
 
           "v" ->
@@ -293,18 +282,15 @@ defmodule GoodtapWeb.GameLive do
 
           "k" when not is_nil(id) ->
             if owner == socket.assigns.my_role do
-              name = card_name_in_zone(socket, id)
               apply_action(socket, fn st, p ->
                 {:ok, new_st} = Actions.copy_card(st, p, id)
-                {:ok, append_log(new_st, p, "copied #{name}")}
+                {:ok, append_log(new_st, p, "copied #{card_name_from_state(new_st, p, id)}")}
               end)
             else
               opp_role = socket.assigns.opp_role
-              name = get_in(socket.assigns.game_state, [opp_role, "zones", "battlefield"])
-                |> Enum.find(&(&1["instance_id"] == id))
-                |> then(&(&1 && &1["name"] || "card"))
               apply_action(socket, fn st, p ->
                 {:ok, new_st} = Actions.copy_opponent_card(st, p, id)
+                name = card_name_from_state(new_st, opp_role, id)
                 {:ok, append_log(new_st, p, "copied opponent's #{name}")}
               end)
             end
@@ -349,79 +335,77 @@ defmodule GoodtapWeb.GameLive do
   # ─── Card Actions ─────────────────────────────────────────────────────────
 
   def handle_event("action", %{"type" => "tap", "instance_id" => id}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       card = find_card_in_zone(state, player, "battlefield", id)
       verb = if card && card["tapped"], do: "untapped", else: "tapped"
       {:ok, new_state} = Actions.tap(state, player, id)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "#{verb} #{name}")}
     end)
   end
 
   def handle_event("action", %{"type" => "move_to_graveyard", "instance_id" => id, "zone" => zone}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.move_to_graveyard(state, player, id, zone)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "#{name} → graveyard")}
     end)
   end
 
   def handle_event("action", %{"type" => "move_to_exile", "instance_id" => id, "zone" => zone}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.move_to_exile(state, player, id, zone)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "#{name} → exile")}
     end)
   end
 
   def handle_event("action", %{"type" => "move_to_hand", "instance_id" => id, "zone" => zone}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.move_to_hand(state, player, id, zone)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "#{name} → hand")}
     end)
   end
 
   def handle_event("action", %{"type" => "move_to_deck_top", "instance_id" => id, "zone" => zone}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.move_to_deck(state, player, id, zone)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "#{name} → deck (top)")}
     end)
   end
 
   def handle_event("action", %{"type" => "move_to_deck_bottom", "instance_id" => id, "zone" => zone}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.move_to_deck_bottom(state, player, id, zone)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "#{name} → deck (bottom)")}
     end)
   end
 
   def handle_event("action", %{"type" => "flip_card", "instance_id" => id, "zone" => zone}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.flip_card(state, player, id, zone)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "flipped #{name}")}
     end)
   end
 
   def handle_event("action", %{"type" => "copy_card", "instance_id" => id}, socket) do
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.copy_card(state, player, id)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "copied #{name}")}
     end)
   end
 
   def handle_event("action", %{"type" => "copy_opponent_card", "instance_id" => id}, socket) do
     opp_role = socket.assigns.opp_role
-    name = get_in(socket.assigns.game_state, [opp_role, "zones", "battlefield"])
-      |> Enum.find(&(&1["instance_id"] == id))
-      |> then(&(&1 && &1["name"] || "card"))
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.copy_opponent_card(state, player, id)
-      {:ok, append_log(new_state, player, "copied #{name}")}
+      name = card_name_from_state(new_state, opp_role, id)
+      {:ok, append_log(new_state, player, "copied opponent's #{name}")}
     end)
   end
 
@@ -480,6 +464,7 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_event("action", %{"type" => "reveal_card", "instance_id" => id}, socket) do
     player = socket.assigns.my_role
+    # Use the card's actual name here since the owner is intentionally revealing it.
     name = get_in(socket.assigns.game_state, [player, "zones", "hand"])
       |> Kernel.||([])
       |> Enum.find(&(&1["instance_id"] == id))
@@ -603,11 +588,11 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_event("remove_counter", %{"instance_id" => id, "counter_index" => idx}, socket) do
     idx = String.to_integer(idx)
-    name = card_name_in_zone(socket, id)
     apply_action(socket, fn state, player ->
       card = find_card_in_zone(state, player, "battlefield", id)
       counter_name = card && Enum.at(card["counters"] || [], idx) |> then(&(&1 && &1["name"])) || "counter"
       {:ok, new_state} = Actions.remove_counter(state, player, id, idx)
+      name = card_name_from_state(new_state, player, id)
       {:ok, append_log(new_state, player, "removed #{counter_name} from #{name}")}
     end)
   end
@@ -685,58 +670,58 @@ defmodule GoodtapWeb.GameLive do
           # Cross-zone moves — apply to all selected cards if multi
           {_, "battlefield"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
-            names = Enum.map(all_ids, &card_name_in_zone(socket, &1))
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
                 Actions.move_to_battlefield(st, player, sid, src, x, y, zone_side)
               end) |> elem(1) |> then(&{:ok, &1})
+              names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → battlefield")}
             end)
 
           {_, "graveyard"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
-            names = Enum.map(all_ids, &card_name_in_zone(socket, &1))
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
                 Actions.move_to_graveyard(st, player, sid, src)
               end) |> elem(1) |> then(&{:ok, &1})
+              names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → graveyard")}
             end)
 
           {_, "exile"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
-            names = Enum.map(all_ids, &card_name_in_zone(socket, &1))
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
                 Actions.move_to_exile(st, player, sid, src)
               end) |> elem(1) |> then(&{:ok, &1})
+              names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → exile")}
             end)
 
           {_, "hand"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
-            names = Enum.map(all_ids, &card_name_in_zone(socket, &1))
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(Enum.with_index(all_ids), {:ok, state}, fn {sid, i}, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
                 idx = if is_integer(insert_index), do: insert_index + i, else: nil
                 Actions.move_to_hand(st, player, sid, src, idx)
               end) |> elem(1) |> then(&{:ok, &1})
+              names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → hand")}
             end)
 
           {_, "deck"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
-            names = Enum.map(all_ids, &card_name_in_zone(socket, &1))
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(Enum.with_index(all_ids), {:ok, state}, fn {sid, i}, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
                 idx = if is_integer(insert_index), do: insert_index + i, else: nil
                 Actions.move_to_deck(st, player, sid, src, idx)
               end) |> elem(1) |> then(&{:ok, &1})
+              names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → deck")}
             end)
 
@@ -975,7 +960,7 @@ defmodule GoodtapWeb.GameLive do
     end)
   end
 
-  defp apply_to_selection(socket, action_fn, log_msg) do
+  defp apply_to_selection(socket, action_fn, log_msg_fn) do
     ids = MapSet.to_list(socket.assigns.selected_cards)
     socket = assign(socket, context_menu: nil)
     state = socket.assigns.game_state
@@ -989,7 +974,13 @@ defmodule GoodtapWeb.GameLive do
         end
       end)
 
-    new_state = if log_msg, do: append_log(new_state, player, log_msg), else: new_state
+    new_state =
+      case log_msg_fn do
+        nil -> new_state
+        f when is_function(f) -> append_log(new_state, player, f.(new_state, player))
+        msg when is_binary(msg) -> append_log(new_state, player, msg)
+      end
+
     socket = persist_and_broadcast(socket, new_state)
     {:noreply, socket}
   end
@@ -1035,18 +1026,22 @@ defmodule GoodtapWeb.GameLive do
     Enum.find(cards, &(&1["instance_id"] == instance_id))
   end
 
-  # Look up a card name by instance_id, but only reveal it if the card is in a
-  # publicly visible zone (battlefield, graveyard, exile). Cards in hand or deck
-  # are hidden from the opponent, so the log must not expose them.
-  # Face-down battlefield cards are also hidden.
-  @public_zones ["battlefield", "graveyard", "exile"]
+  # Look up a card name by instance_id. Only returns the real name if the card
+  # is known to both players (i.e. public knowledge). Otherwise returns "a card".
   defp card_name_in_zone(socket, instance_id) do
-    state = socket.assigns.game_state
-    player = socket.assigns.my_role
-    Enum.find_value(@public_zones, "a card", fn zone ->
-      card = find_card_in_zone(state, player, zone, instance_id)
-      if card && !card["is_face_down"], do: card["name"] || "a card"
+    card_name_from_state(socket.assigns.game_state, socket.assigns.my_role, instance_id)
+  end
+
+  defp card_name_from_state(state, player, instance_id) do
+    all_zones = ["battlefield", "graveyard", "exile", "hand", "deck"]
+    card = Enum.find_value(all_zones, fn zone ->
+      find_card_in_zone(state, player, zone, instance_id)
     end)
+    if card && State.known_to?(card, "host") && State.known_to?(card, "opponent") do
+      card["name"] || "a card"
+    else
+      "a card"
+    end
   end
 
   # ─── Template Helpers ─────────────────────────────────────────────────────
