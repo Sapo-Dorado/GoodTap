@@ -56,13 +56,22 @@ defmodule GoodtapWeb.GameListLive do
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-bold">My Games</h1>
         <%= if length(@games) >= 10 do %>
-          <div class="relative group">
-            <button class="btn btn-primary btn-disabled opacity-50 cursor-not-allowed" disabled>
+          <div
+            style="cursor:not-allowed"
+            onmouseenter="document.getElementById('new-game-tip').style.display='block'"
+            onmouseleave="document.getElementById('new-game-tip').style.display='none'"
+            onmousemove="(function(e){var t=document.getElementById('new-game-tip');t.style.left=(e.clientX-t.offsetWidth-10)+'px';t.style.top=(e.clientY+14)+'px';})(event)"
+          >
+            <button class="btn btn-primary opacity-50 cursor-not-allowed" disabled style="pointer-events:none">
               + New Game
             </button>
-            <div class="absolute right-0 top-full mt-1 bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-gray-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10">
-              Maximum 10 games reached
-            </div>
+          </div>
+          <div
+            id="new-game-tip"
+            style="display:none; position:fixed; z-index:9999; pointer-events:none;"
+            class="bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-gray-300 whitespace-nowrap"
+          >
+            You can have at most 10 active games
           </div>
         <% else %>
           <button phx-click="new_game" class="btn btn-primary">
