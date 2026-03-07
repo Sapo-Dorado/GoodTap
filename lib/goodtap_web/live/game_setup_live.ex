@@ -25,7 +25,8 @@ defmodule GoodtapWeb.GameSetupLive do
             game
 
           is_nil(game.opponent_id) && game.status == "waiting" ->
-            {:ok, updated} = Games.join_game(game, user)
+            {:ok, _} = Games.join_game(game, user)
+            updated = Games.get_game!(game.id)
             Games.broadcast_game_update(updated)
             updated
 
