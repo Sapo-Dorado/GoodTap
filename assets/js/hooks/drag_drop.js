@@ -27,12 +27,14 @@ const DragDrop = {
 
       const card = e.target.closest("[data-draggable]");
 
-      // Click not on a card — check if on battlefield for lasso
+      // Click not on a card — check if on battlefield bottom half for lasso
       if (!card) {
-        const bf = e.target.closest("#my-battlefield");
+        const bf = e.target.closest("#battlefield");
         if (bf && !e.target.closest("[data-pile-zone]")) {
+          const bfRect = bf.getBoundingClientRect();
+          const inMyHalf = e.clientY > bfRect.top + bfRect.height / 2;
           this.pushEvent("clear_selection", {});
-          this.startLasso(bf, e);
+          if (inMyHalf) this.startLasso(bf, e);
         } else {
           this.pushEvent("clear_selection", {});
         }
@@ -385,8 +387,7 @@ const DragDrop = {
       const draggedEl = this.draggedEl;
       this.dragging = null;
 
-      // Normalize opp-battlefield to battlefield for logic purposes
-      const dropZone = dropInfo ? (dropInfo.zone === "opp-battlefield" ? "battlefield" : dropInfo.zone) : null;
+      const dropZone = dropInfo ? dropInfo.zone : null;
 
       const isSameZone = dropZone === zone;
       const isBattlefield = dropZone === "battlefield";
@@ -403,15 +404,6 @@ const DragDrop = {
         this._insertIndex = null;
         this.cleanupDragGhost();
 
-        // opp-battlefield is rotated 180° in the DOM: its layout rect is unrotated,
-        // so coordinates computed from getBoundingClientRect() are visually inverted.
-        // Flip them so the card appears exactly where it was dropped visually,
-        // and so the stored position is correct within the rotated element's space.
-        if (dropInfo.zone === "opp-battlefield") {
-          relX = 1 - relX;
-          relY = 1 - relY;
-        }
-
         // ── Optimistic rendering ──────────────────────────────────────────
         //
         // Immediately place the card at its destination so there is no gap
@@ -426,7 +418,7 @@ const DragDrop = {
         // Skipped for: → graveyard / exile / deck (complex pile HTML),
         // tokens → hand (server silently drops them), and find-mode reorders.
 
-        if (isBattlefield && zone === "battlefield" && dropInfo.zone !== "opp-battlefield") {
+        if (isBattlefield && zone === "battlefield") {
           // ── Battlefield reposition (staying on my side) ──
           ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
           card.style.left = Math.trunc(relX * 100) + "%";
@@ -481,9 +473,9 @@ const DragDrop = {
           }
           // If isFind or insertIndex is null, draggedEl stays set; server re-render restores.
 
-        } else if (isBattlefield && zone !== "battlefield" && dropInfo.zone !== "opp-battlefield") {
+        } else if (isBattlefield && zone !== "battlefield") {
           // ── Cross-zone → my battlefield ──
-          const bf = document.getElementById("my-battlefield");
+          const bf = document.getElementById("battlefield");
           if (bf) {
             ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
             const el = document.createElement("div");
@@ -541,7 +533,7 @@ const DragDrop = {
           instance_id: instanceId,
           from_zone: zone,
           owner: owner,
-          target_zone: dropInfo.zone,  // send raw zone name; server normalizes opp-battlefield
+          target_zone: dropInfo.zone,
           x: relX,
           y: relY,
           insert_index: insertIndex,
@@ -728,7 +720,7 @@ const DragDrop = {
     const dropInfo = this.findDropZone(x, y);
     if (!dropInfo) return;
 
-    const dZone = dropInfo.zone === "opp-battlefield" ? "battlefield" : dropInfo.zone;
+    const dZone = dropInfo.zone;
     const isPileEl = !!dropInfo.el.dataset.pileZone;
 
     if (dZone in LIST_ZONES && !isPileEl) {

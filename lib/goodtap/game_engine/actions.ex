@@ -142,7 +142,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Move to Battlefield ──────────────────────────────────────────────────
 
-  def move_to_battlefield(state, player, instance_id, source_zone, x, y, zone_side \\ "mine") do
+  def move_to_battlefield(state, player, instance_id, source_zone, x, y) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       {fx, fy} = nudge_if_occupied(state, player, x, y, nil)
       card =
@@ -150,7 +150,6 @@ defmodule Goodtap.GameEngine.Actions do
         |> Map.put("tapped", false)
         |> Map.put("x", fx)
         |> Map.put("y", fy)
-        |> Map.put("zone_side", zone_side)
 
       # Face-down cards retain existing known state (player keeps prior knowledge).
       # Face-up cards entering battlefield are visible to all.
@@ -160,11 +159,10 @@ defmodule Goodtap.GameEngine.Actions do
     end
   end
 
-  def update_battlefield_position(state, player, instance_id, x, y, zone_side \\ nil) do
+  def update_battlefield_position(state, player, instance_id, x, y) do
     {fx, fy} = nudge_if_occupied(state, player, x, y, instance_id)
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
-      card = card |> Map.put("x", fx) |> Map.put("y", fy)
-      if zone_side, do: Map.put(card, "zone_side", zone_side), else: card
+      card |> Map.put("x", fx) |> Map.put("y", fy)
     end)
   end
 

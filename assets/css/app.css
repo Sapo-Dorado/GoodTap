@@ -132,9 +132,8 @@
 }
 
 /* Battlefield - relative positioning for absolute cards */
-#my-battlefield, #opp-battlefield {
+#battlefield {
   position: relative;
-  background-image: radial-gradient(ellipse at center, rgba(55, 65, 81, 0.5) 0%, transparent 70%);
 }
 
 /* transform-origin: top left so left/top % positions map to card top-left corner */

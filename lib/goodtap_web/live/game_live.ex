@@ -616,10 +616,7 @@ defmodule GoodtapWeb.GameLive do
   def handle_event("drag_end", params, socket) do
     instance_id = params["instance_id"]
     from_zone = params["from_zone"]
-    raw_target_zone = params["target_zone"]
-    # Treat opp-battlefield as battlefield (allows dropping your cards on opponent's side)
-    target_zone = if raw_target_zone == "opp-battlefield", do: "battlefield", else: raw_target_zone
-    zone_side = if raw_target_zone == "opp-battlefield", do: "opp", else: "mine"
+    target_zone = params["target_zone"]
     x = params["x"] || 0.1
     y = params["y"] || 0.5
     owner = params["owner"] || socket.assigns.my_role
@@ -651,7 +648,7 @@ defmodule GoodtapWeb.GameLive do
                   if card do
                     nx = max(0.0, min(0.98, (card["x"] || 0.1) + dx))
                     ny = max(0.0, min(0.98, (card["y"] || 0.5) + dy))
-                    Actions.update_battlefield_position(st, player, sid, nx, ny, zone_side)
+                    Actions.update_battlefield_position(st, player, sid, nx, ny)
                   else
                     {:ok, st}
                   end
@@ -661,7 +658,7 @@ defmodule GoodtapWeb.GameLive do
               end)
             else
               apply_action_inline(socket, fn state, player ->
-                Actions.update_battlefield_position(state, player, instance_id, x, y, zone_side)
+                Actions.update_battlefield_position(state, player, instance_id, x, y)
               end)
             end
 
@@ -677,7 +674,7 @@ defmodule GoodtapWeb.GameLive do
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
-                Actions.move_to_battlefield(st, player, sid, src, x, y, zone_side)
+                Actions.move_to_battlefield(st, player, sid, src, x, y)
               end) |> elem(1) |> then(&{:ok, &1})
               names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → battlefield")}
@@ -1116,26 +1113,49 @@ defmodule GoodtapWeb.GameLive do
         </div>
       </div>
 
-      <%!-- Battlefields — flex-1 shared area, split equally --%>
-      <div class="flex-1 flex flex-col min-h-0">
-        <%!-- Opponent Battlefield (rotated 180° so their near edge faces them) --%>
+      <%!-- Unified Battlefield — single coordinate space, both players' cards share this div --%>
+      <div class="flex-1 min-h-0">
         <div
-          id="opp-battlefield"
-          class="flex-1 relative bg-gray-900 border-b border-gray-700 overflow-hidden"
-          data-drop-zone="opp-battlefield"
-          style="transform: rotate(180deg);"
+          id="battlefield"
+          class="relative w-full h-full overflow-hidden"
+          data-drop-zone="battlefield"
+          data-my-role={@my_role}
+          phx-hook="Battlefield"
+          style="background: linear-gradient(to bottom, #111827 50%, #1a2332 50%);"
         >
+          <%!-- Divider line between the two halves --%>
+          <div class="absolute inset-x-0 pointer-events-none" style="top: 50%; height: 1px; background: #4b5563; z-index: 2;"></div>
+
+          <%!-- Log toggle — left edge, vertically centered in my (bottom) half --%>
+          <button
+            phx-click="toggle_log"
+            class={["absolute left-2 z-10 flex flex-col gap-1 p-1.5 rounded hover:bg-gray-700/60 transition-colors", if(@log_open, do: "text-blue-400", else: "text-gray-500 hover:text-gray-300")]}
+            style="top: 75%; transform: translateY(-50%);"
+            title="Game Log"
+            data-no-hotkey
+          >
+            <span class="block w-4 h-0.5 bg-current rounded"></span>
+            <span class="block w-4 h-0.5 bg-current rounded"></span>
+            <span class="block w-4 h-0.5 bg-current rounded"></span>
+          </button>
+
+          <%!-- Opponent's cards — mirrored using right/bottom so their (x,y) becomes our (right: x%, bottom: y%).
+               This means their card near their hand (y≈1, bottom of their screen) appears near the top of ours.
+               Cards are rotated 180° visually so the card text faces us. --%>
           <%= for card <- zone_cards(@opp, "battlefield") do %>
+            <%
+              opp_x = trunc((card["x"] || 0.5) * 100)
+              opp_y = trunc((card["y"] || 0.5) * 100)
+            %>
             <div
               id={"opp-card-#{card["instance_id"]}"}
               class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "is-tapped", else: "")]}
-              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
+              style={"right: #{opp_x}%; bottom: #{opp_y}%; z-index: 1;"}
               data-hoverable="true"
               data-instance-id={card["instance_id"]}
               data-zone="battlefield"
               data-owner={@opp_role}
             >
-              <%!-- counter-rotate so cards appear right-side-up inside the 180° flipped field --%>
               <div
                 style="transform: rotate(180deg); transform-origin: center;"
                 data-card-img={card_display_url(card, @my_role, @opp_role, "battlefield")}
@@ -1161,8 +1181,8 @@ defmodule GoodtapWeb.GameLive do
             </div>
           <% end %>
 
-          <%!-- My cards placed on the opponent's side — no counter-rotation, appear upside-down to me, right-side-up to opponent --%>
-          <%= for card <- Enum.filter(zone_cards(@my, "battlefield"), &(&1["zone_side"] == "opp")) do %>
+          <%!-- My cards — rendered at their (x, y) position, upright --%>
+          <%= for card <- zone_cards(@my, "battlefield") do %>
             <div
               id={"card-#{card["instance_id"]}"}
               class={[
@@ -1170,136 +1190,7 @@ defmodule GoodtapWeb.GameLive do
                 if(card["tapped"], do: "is-tapped", else: ""),
                 if(MapSet.member?(@selected_cards, card["instance_id"]), do: "is-selected", else: ""),
               ]}
-              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
-              data-draggable="true"
-              data-instance-id={card["instance_id"]}
-              data-zone="battlefield"
-              data-owner={@my_role}
-              data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
-              data-selected={if MapSet.member?(@selected_cards, card["instance_id"]), do: "true", else: "false"}
-              data-is-token={if card["is_token"], do: "true", else: "false"}
-            >
-              <div class="flex flex-col items-center">
-                <div class="card-draggable">
-                  <img
-                    src={card_display_url(card, @my_role, @my_role, "battlefield")}
-                    class="card-image rounded shadow-lg"
-                    draggable="false"
-                  />
-                </div>
-              </div>
-            </div>
-          <% end %>
-
-          <%!-- Opponent zone piles — inside the 180°-rotated field, counter-rotated to appear upright.
-               "bottom: X; right: Y" in rotated space = bottom-left from viewer (matching player's left side).
-               "bottom: X; left: Y" in rotated space = bottom-right from viewer (matching player's right side). --%>
-
-          <%!-- Graveyard — bottom-right in rotated space = bottom-left from viewer (like player's GY) --%>
-          <div
-            class="absolute cursor-pointer"
-            style="bottom: 8px; right: 8px; z-index: 20; transform: rotate(180deg); transform-origin: center;"
-            phx-click="open_zone"
-            phx-value-zone="graveyard"
-            phx-value-owner={@opp_role}
-          >
-            <div class="relative" style="width: 78px; height: 56px;">
-              <%= if zone_cards(@opp, "graveyard") != [] do %>
-                <img
-                  src={card_display_url(hd(zone_cards(@opp, "graveyard")), @opp_role, @opp_role, "graveyard")}
-                  class="rounded pointer-events-none"
-                  style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
-                  draggable="false"
-                />
-              <% else %>
-                <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
-                  <span class="text-gray-400 text-xs font-semibold">GY</span>
-                </div>
-              <% end %>
-              <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
-                {length(zone_cards(@opp, "graveyard"))}
-              </div>
-            </div>
-          </div>
-
-          <%!-- Exile — above graveyard on right in rotated space = above GY on left from viewer --%>
-          <div
-            class="absolute cursor-pointer"
-            style="bottom: 72px; right: 8px; z-index: 20; transform: rotate(180deg); transform-origin: center;"
-            phx-click="open_zone"
-            phx-value-zone="exile"
-            phx-value-owner={@opp_role}
-          >
-            <div class="relative" style="width: 78px; height: 56px;">
-              <%= if zone_cards(@opp, "exile") != [] do %>
-                <img
-                  src={card_display_url(hd(zone_cards(@opp, "exile")), @opp_role, @opp_role, "exile")}
-                  class="rounded pointer-events-none"
-                  style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
-                  draggable="false"
-                />
-              <% else %>
-                <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer">
-                  <span class="text-gray-400 text-xs font-semibold">EX</span>
-                </div>
-              <% end %>
-              <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
-                {length(zone_cards(@opp, "exile"))}
-              </div>
-            </div>
-          </div>
-
-          <%!-- Deck — bottom-left in rotated space = bottom-right from viewer (like player's deck) --%>
-          <div
-            class="absolute cursor-pointer"
-            style="bottom: 8px; left: 8px; z-index: 20; transform: rotate(180deg); transform-origin: center;"
-            phx-click="open_zone"
-            phx-value-zone="deck"
-            phx-value-owner={@opp_role}
-          >
-            <div class="relative" style="width: 56px; height: 78px;">
-              <%= if zone_cards(@opp, "deck") != [] do %>
-                <img src={card_display_url(hd(zone_cards(@opp, "deck")), @my_role, @opp_role, "deck")} class="rounded shadow-lg pointer-events-none" style="width: 56px; height: 78px; object-fit: cover;" draggable="false" />
-              <% else %>
-                <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
-                  <span class="text-gray-400 text-xs font-semibold">DECK</span>
-                </div>
-              <% end %>
-              <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
-                {length(zone_cards(@opp, "deck"))}
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        <%!-- My Battlefield --%>
-        <div
-          id="my-battlefield"
-          class="flex-1 relative bg-gray-850 overflow-hidden"
-          data-drop-zone="battlefield"
-          phx-hook="Battlefield"
-        >
-          <%!-- Log toggle — left edge, vertically centered --%>
-          <button
-            phx-click="toggle_log"
-            class={["absolute left-2 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1 p-1.5 rounded hover:bg-gray-700/60 transition-colors", if(@log_open, do: "text-blue-400", else: "text-gray-500 hover:text-gray-300")]}
-            title="Game Log"
-            data-no-hotkey
-          >
-            <span class="block w-4 h-0.5 bg-current rounded"></span>
-            <span class="block w-4 h-0.5 bg-current rounded"></span>
-            <span class="block w-4 h-0.5 bg-current rounded"></span>
-          </button>
-          <%= for card <- Enum.filter(zone_cards(@my, "battlefield"), &(&1["zone_side"] != "opp")) do %>
-            <div
-              id={"card-#{card["instance_id"]}"}
-              class={[
-                "card-on-battlefield absolute cursor-pointer transition-transform",
-                if(card["tapped"], do: "is-tapped", else: ""),
-                if(MapSet.member?(@selected_cards, card["instance_id"]), do: "is-selected", else: ""),
-              ]}
-              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%;"}
+              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%; z-index: 1;"}
               data-draggable="true"
               data-instance-id={card["instance_id"]}
               data-zone="battlefield"
@@ -1356,6 +1247,83 @@ defmodule GoodtapWeb.GameLive do
               </div>
             </div>
           <% end %>
+
+          <%!-- Opponent zone piles — mirrored from their layout (their bottom-right = our top-left, etc.) --%>
+          <%!-- Opponent Deck — their bottom-right → our top-left --%>
+          <div
+            class="absolute cursor-pointer"
+            style="top: 8px; left: 8px; z-index: 20;"
+            phx-click="open_zone"
+            phx-value-zone="deck"
+            phx-value-owner={@opp_role}
+          >
+            <div class="relative" style="width: 56px; height: 78px;">
+              <%= if zone_cards(@opp, "deck") != [] do %>
+                <img src={card_display_url(hd(zone_cards(@opp, "deck")), @my_role, @opp_role, "deck")} class="rounded shadow-lg pointer-events-none" style="width: 56px; height: 78px; object-fit: cover;" draggable="false" />
+              <% else %>
+                <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
+                  <span class="text-gray-400 text-xs font-semibold">DECK</span>
+                </div>
+              <% end %>
+              <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
+                {length(zone_cards(@opp, "deck"))}
+              </div>
+            </div>
+          </div>
+
+          <%!-- Opponent Graveyard — their bottom-left → our top-right --%>
+          <div
+            class="absolute cursor-pointer"
+            style="top: 8px; right: 8px; z-index: 20;"
+            phx-click="open_zone"
+            phx-value-zone="graveyard"
+            phx-value-owner={@opp_role}
+          >
+            <div class="relative" style="width: 78px; height: 56px;">
+              <%= if zone_cards(@opp, "graveyard") != [] do %>
+                <img
+                  src={card_display_url(hd(zone_cards(@opp, "graveyard")), @opp_role, @opp_role, "graveyard")}
+                  class="rounded pointer-events-none"
+                  style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
+                  draggable="false"
+                />
+              <% else %>
+                <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
+                  <span class="text-gray-400 text-xs font-semibold">GY</span>
+                </div>
+              <% end %>
+              <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
+                {length(zone_cards(@opp, "graveyard"))}
+              </div>
+            </div>
+          </div>
+
+          <%!-- Opponent Exile — their above-graveyard-bottom-left → our below-graveyard-top-right --%>
+          <div
+            class="absolute cursor-pointer"
+            style="top: 72px; right: 8px; z-index: 20;"
+            phx-click="open_zone"
+            phx-value-zone="exile"
+            phx-value-owner={@opp_role}
+          >
+            <div class="relative" style="width: 78px; height: 56px;">
+              <%= if zone_cards(@opp, "exile") != [] do %>
+                <img
+                  src={card_display_url(hd(zone_cards(@opp, "exile")), @opp_role, @opp_role, "exile")}
+                  class="rounded pointer-events-none"
+                  style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
+                  draggable="false"
+                />
+              <% else %>
+                <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5 cursor-pointer">
+                  <span class="text-gray-400 text-xs font-semibold">EX</span>
+                </div>
+              <% end %>
+              <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none">
+                {length(zone_cards(@opp, "exile"))}
+              </div>
+            </div>
+          </div>
 
           <%!-- Zone Piles (sideways / landscape orientation to distinguish from battlefield cards) --%>
           <%!-- Graveyard pile: bottom-left (sideways / landscape) --%>
