@@ -18,6 +18,21 @@ defmodule Goodtap.GameEngine.Actions do
     |> clear_known_to("opponent")
   end
 
+  # If the player has "top_revealed" enabled, mark the current top deck card known to both.
+  # Called after any action that changes the deck contents or order.
+  defp maybe_reveal_deck_top(state, player) do
+    if get_in(state, [player, "top_revealed"]) do
+      case get_in(state, [player, "zones", "deck"]) do
+        [top | rest] ->
+          put_in(state, [player, "zones", "deck"], [mark_known_to_both(top) | rest])
+        _ ->
+          state
+      end
+    else
+      state
+    end
+  end
+
   defp put_in_known(card, role, value) do
     known =
       case card["known"] do
@@ -45,9 +60,9 @@ defmodule Goodtap.GameEngine.Actions do
       card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
 
       if card["is_token"] do
-        {:ok, state}
+        {:ok, maybe_reveal_deck_top(state, player)}
       else
-        {:ok, prepend_to_zone(state, player, "graveyard", card)}
+        {:ok, maybe_reveal_deck_top(prepend_to_zone(state, player, "graveyard", card), player)}
       end
     end
   end
@@ -59,9 +74,9 @@ defmodule Goodtap.GameEngine.Actions do
       card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
 
       if card["is_token"] do
-        {:ok, state}
+        {:ok, maybe_reveal_deck_top(state, player)}
       else
-        {:ok, prepend_to_zone(state, player, "exile", card)}
+        {:ok, maybe_reveal_deck_top(prepend_to_zone(state, player, "exile", card), player)}
       end
     end
   end
@@ -95,13 +110,16 @@ defmodule Goodtap.GameEngine.Actions do
       card = card |> Map.put("tapped", false) |> reset_counters() |> mark_known_to(player)
 
       if card["is_token"] do
-        {:ok, state}
+        {:ok, maybe_reveal_deck_top(state, player)}
       else
-        if is_integer(insert_index) do
-          {:ok, insert_into_zone(state, player, "hand", card, insert_index)}
-        else
-          {:ok, append_to_zone(state, player, "hand", card)}
-        end
+        state =
+          if is_integer(insert_index) do
+            insert_into_zone(state, player, "hand", card, insert_index)
+          else
+            append_to_zone(state, player, "hand", card)
+          end
+
+        {:ok, maybe_reveal_deck_top(state, player)}
       end
     end
   end
@@ -117,11 +135,14 @@ defmodule Goodtap.GameEngine.Actions do
       if card["is_token"] do
         {:ok, state}
       else
-        if is_integer(insert_index) do
-          {:ok, insert_into_zone(state, player, "deck", card, insert_index)}
-        else
-          {:ok, prepend_to_zone(state, player, "deck", card)}
-        end
+        state =
+          if is_integer(insert_index) do
+            insert_into_zone(state, player, "deck", card, insert_index)
+          else
+            prepend_to_zone(state, player, "deck", card)
+          end
+
+        {:ok, maybe_reveal_deck_top(state, player)}
       end
     end
   end
@@ -135,7 +156,7 @@ defmodule Goodtap.GameEngine.Actions do
       if card["is_token"] do
         {:ok, state}
       else
-        {:ok, append_to_zone(state, player, "deck", card)}
+        {:ok, maybe_reveal_deck_top(append_to_zone(state, player, "deck", card), player)}
       end
     end
   end
@@ -155,7 +176,7 @@ defmodule Goodtap.GameEngine.Actions do
       # Face-up cards entering battlefield are visible to all.
       card = if card["is_face_down"], do: card, else: mark_known_to_both(card)
 
-      {:ok, append_to_zone(state, player, "battlefield", card)}
+      {:ok, maybe_reveal_deck_top(append_to_zone(state, player, "battlefield", card), player)}
     end
   end
 
@@ -210,13 +231,25 @@ defmodule Goodtap.GameEngine.Actions do
   def draw(state, player, count) when count > 0 do
     deck = get_in(state, [player, "zones", "deck"])
     hand = get_in(state, [player, "zones", "hand"])
-    drawn = deck |> Enum.take(count) |> Enum.map(&mark_known_to(&1, player))
+    top_revealed = get_in(state, [player, "top_revealed"]) || false
+
+    # When top is revealed, each drawn card was publicly visible as it was drawn,
+    # so all drawn cards are known to both players.
+    drawn =
+      deck
+      |> Enum.take(count)
+      |> Enum.map(fn card ->
+        card = mark_known_to(card, player)
+        if top_revealed, do: mark_known_to_both(card), else: card
+      end)
+
     remaining = Enum.drop(deck, count)
 
     state =
       state
       |> put_in([player, "zones", "deck"], remaining)
       |> put_in([player, "zones", "hand"], hand ++ drawn)
+      |> maybe_reveal_deck_top(player)
 
     {:ok, state}
   end
@@ -232,6 +265,7 @@ defmodule Goodtap.GameEngine.Actions do
         |> Enum.map(&clear_known_to_both/1)
         |> Enum.shuffle()
       end)
+      |> maybe_reveal_deck_top(player)
 
     {:ok, state}
   end
@@ -253,6 +287,7 @@ defmodule Goodtap.GameEngine.Actions do
       state
       |> put_in([player, "zones", "hand"], new_hand)
       |> put_in([player, "zones", "deck"], new_deck)
+      |> maybe_reveal_deck_top(player)
 
     {:ok, state}
   end
@@ -262,6 +297,7 @@ defmodule Goodtap.GameEngine.Actions do
   # Reveal top N cards (remove from deck top, return them for display).
   # When scrying more than 1 card, clear known state on all revealed cards —
   # the player sees them during scry but can't track individual positions afterward.
+  # top_revealed does not change this — the new top is revealed after scry_resolve.
   def scry_reveal(state, player, count) do
     deck = get_in(state, [player, "zones", "deck"])
     top_cards = Enum.take(deck, count)
@@ -304,7 +340,7 @@ defmodule Goodtap.GameEngine.Actions do
     # to_top was built in reverse order (head prepend), reverse it
     new_deck = Enum.reverse(to_top) ++ deck ++ to_bottom
     state = put_in(state, [player, "zones", "deck"], new_deck)
-    state
+    maybe_reveal_deck_top(state, player)
   end
 
   defp move_to_graveyard_direct(state, player, card) do
@@ -325,6 +361,15 @@ defmodule Goodtap.GameEngine.Actions do
     else
       {:ok, prepend_to_zone(state, player, "exile", card)}
     end
+  end
+
+  # ─── Toggle Top Revealed ─────────────────────────────────────────────────
+
+  def toggle_top_revealed(state, player) do
+    currently = get_in(state, [player, "top_revealed"]) || false
+    state = put_in(state, [player, "top_revealed"], !currently)
+    state = maybe_reveal_deck_top(state, player)
+    {:ok, state}
   end
 
   # ─── Add Counter ─────────────────────────────────────────────────────────

@@ -39,11 +39,11 @@ defmodule GoodtapWeb.Hotkeys do
   end
 
   def valid_actions_for("deck") do
-    [:draw, :shuffle, :scry, :find_card, :draw_face_down]
+    [:draw, :shuffle, :scry, :find_card, :draw_face_down, :toggle_top_revealed]
   end
 
   def valid_actions_for("deck_top") do
-    [:draw, :move_to_graveyard, :move_to_exile, :shuffle, :scry, :draw_face_down]
+    [:draw, :move_to_graveyard, :move_to_exile, :shuffle, :scry, :draw_face_down, :toggle_top_revealed]
   end
 
   def valid_actions_for("graveyard") do
@@ -79,5 +79,6 @@ defmodule GoodtapWeb.Hotkeys do
   def action_label(:reveal_card), do: "Reveal to Opponent"
   def action_label(:copy_opponent_card), do: "Copy Card"
   def action_label(:target_card), do: "Target"
+  def action_label(:toggle_top_revealed), do: "Keep Top Revealed"
   def action_label(other), do: to_string(other)
 end

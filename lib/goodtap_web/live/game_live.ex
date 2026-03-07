@@ -159,13 +159,16 @@ defmodule GoodtapWeb.GameLive do
           Hotkeys.valid_actions_for(zone)
       end
 
+    top_revealed = get_in(socket.assigns.game_state, [socket.assigns.my_role, "top_revealed"]) || false
+
     context_menu = %{
       instance_id: instance_id,
       zone: zone,
       x: x,
       y_from_bottom: y_from_bottom,
       actions: actions,
-      scry_count: 1
+      scry_count: 1,
+      top_revealed: top_revealed
     }
 
     {:noreply, assign(socket, context_menu: context_menu)}
@@ -433,6 +436,15 @@ defmodule GoodtapWeb.GameLive do
     apply_action(socket, fn state, player ->
       {:ok, new_state} = Actions.shuffle(state, player)
       {:ok, append_log(new_state, player, "shuffled their deck")}
+    end)
+  end
+
+  def handle_event("action", %{"type" => "toggle_top_revealed"}, socket) do
+    apply_action(socket, fn state, player ->
+      {:ok, new_state} = Actions.toggle_top_revealed(state, player)
+      enabled = get_in(new_state, [player, "top_revealed"]) || false
+      msg = if enabled, do: "revealed the top of their deck", else: "stopped revealing the top of their deck"
+      {:ok, append_log(new_state, player, msg)}
     end)
   end
 
@@ -1451,6 +1463,21 @@ defmodule GoodtapWeb.GameLive do
             style={"left: #{@context_menu.x}px; bottom: #{@context_menu.y_from_bottom}px;"}
           >
             <%= for action <- @context_menu.actions do %>
+              <%= if action == :toggle_top_revealed do %>
+                <button
+                  class="w-full text-left px-4 py-2 text-sm hover:bg-gray-700 flex items-center justify-between"
+                  phx-click="action"
+                  phx-value-type="toggle_top_revealed"
+                  phx-value-instance_id={@context_menu.instance_id}
+                  phx-value-zone={@context_menu.zone}
+                >
+                  <span class="flex items-center gap-2">
+                    <span :if={@context_menu.top_revealed} class="text-green-400 text-xs">●</span>
+                    <span :if={!@context_menu.top_revealed} class="text-gray-500 text-xs">○</span>
+                    {if @context_menu.top_revealed, do: "Stop Revealing Top", else: "Keep Top Revealed"}
+                  </span>
+                </button>
+              <% else %>
               <%= if action == :scry do %>
                 <%!-- Scry row: label + count adjuster + confirm --%>
                 <div class="flex items-center px-4 py-2 text-sm gap-2">
@@ -1485,6 +1512,7 @@ defmodule GoodtapWeb.GameLive do
                     {Hotkeys.display_for(action)}
                   </span>
                 </button>
+              <% end %>
               <% end %>
             <% end %>
           </div>
