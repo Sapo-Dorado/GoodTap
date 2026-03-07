@@ -21,16 +21,30 @@ defmodule Goodtap.Decks do
   end
 
   defp insert_deck_cards(deck, card_list) do
-    Enum.each(card_list, fn %{name: name, quantity: qty, board: board} ->
+    Enum.each(card_list, fn entry ->
+      %{name: name, quantity: qty, board: board} = entry
+      set_code = Map.get(entry, :set_code)
+      collector_number = Map.get(entry, :collector_number)
+
       case Catalog.find_card_for_deck(name) do
         nil ->
           :ok
 
         card ->
+          # Resolve printing: prefer exact set+collector match, fall back to nil
+          printing_id =
+            if set_code && collector_number do
+              case Catalog.get_printing_by_set(set_code, collector_number) do
+                nil -> nil
+                printing -> printing.id
+              end
+            end
+
           %DeckCard{}
           |> DeckCard.changeset(%{
             deck_id: deck.id,
             card_name: card.name,
+            printing_id: printing_id,
             quantity: qty,
             board: board
           })
@@ -69,6 +83,49 @@ defmodule Goodtap.Decks do
     Repo.delete(deck)
   end
 
+  def add_card_to_deck(deck, card_name, printing_id \\ nil, board \\ "main") do
+    %DeckCard{}
+    |> DeckCard.changeset(%{deck_id: deck.id, card_name: card_name, printing_id: printing_id, quantity: 1, board: board})
+    |> Repo.insert(
+      on_conflict: [inc: [quantity: 1]],
+      conflict_target: [:deck_id, :card_name, :board]
+    )
+  end
+
+  def update_deck_card_quantity(deck_card, quantity) when quantity > 0 do
+    deck_card
+    |> DeckCard.changeset(%{quantity: quantity})
+    |> Repo.update()
+  end
+
+  def remove_deck_card(deck_card) do
+    Repo.delete(deck_card)
+  end
+
+  def move_deck_card_board(deck_card, board) do
+    existing =
+      Repo.get_by(DeckCard,
+        deck_id: deck_card.deck_id,
+        card_name: deck_card.card_name,
+        board: board
+      )
+
+    if existing do
+      # Merge quantities into the target board entry, delete source
+      Repo.update_all(
+        from(dc in DeckCard, where: dc.id == ^existing.id),
+        inc: [quantity: deck_card.quantity]
+      )
+      Repo.delete(deck_card)
+    else
+      deck_card
+      |> DeckCard.changeset(%{board: board})
+      |> Repo.update()
+    end
+  end
+
+  def get_deck_card!(id), do: Repo.get!(DeckCard, id)
+
   # Returns a flat list of card names repeated by quantity (for shuffling into deck)
   def expand_deck_card_names(deck_id) do
     DeckCard
@@ -76,5 +133,88 @@ defmodule Goodtap.Decks do
     |> select([dc], {dc.card_name, dc.quantity})
     |> Repo.all()
     |> Enum.flat_map(fn {name, qty} -> List.duplicate(name, qty) end)
+  end
+
+  # Apply a list of sideboard swaps: [{deck_card_id, qty, to_board}]
+  def apply_sideboard_swaps(swaps) do
+    Repo.transact(fn ->
+      Enum.each(swaps, fn {deck_card_id, qty, to_board} ->
+        dc = Repo.get!(DeckCard, deck_card_id)
+        from_board = dc.board
+
+        cond do
+          qty <= 0 -> :ok
+          qty >= dc.quantity ->
+            # Move all to target board
+            existing = Repo.get_by(DeckCard, deck_id: dc.deck_id, card_name: dc.card_name, board: to_board)
+
+            if existing do
+              Repo.update_all(
+                from(d in DeckCard, where: d.id == ^existing.id),
+                inc: [quantity: dc.quantity]
+              )
+              Repo.delete(dc)
+            else
+              dc |> DeckCard.changeset(%{board: to_board}) |> Repo.update!()
+            end
+
+          true ->
+            # Move partial qty: reduce source, add to target
+            dc |> DeckCard.changeset(%{quantity: dc.quantity - qty}) |> Repo.update!()
+            existing = Repo.get_by(DeckCard, deck_id: dc.deck_id, card_name: dc.card_name, board: to_board)
+
+            if existing do
+              Repo.update_all(
+                from(d in DeckCard, where: d.id == ^existing.id),
+                inc: [quantity: qty]
+              )
+            else
+              %DeckCard{}
+              |> DeckCard.changeset(%{
+                deck_id: dc.deck_id,
+                card_name: dc.card_name,
+                printing_id: dc.printing_id,
+                quantity: qty,
+                board: to_board
+              })
+              |> Repo.insert!()
+            end
+        end
+
+        _ = from_board  # suppress unused warning
+      end)
+
+      {:ok, :done}
+    end)
+  end
+
+  # Returns the commander card for a deck, or nil
+  def get_commander(deck_id) do
+    DeckCard
+    |> where([dc], dc.deck_id == ^deck_id and dc.board == "commander")
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  # Set a card as commander: moves existing commander to main if one exists, then sets this card
+  def set_commander(deck_id, deck_card_id) do
+    Repo.transact(fn ->
+      # Move existing commander(s) back to main
+      existing_commanders =
+        DeckCard
+        |> where([dc], dc.deck_id == ^deck_id and dc.board == "commander")
+        |> Repo.all()
+
+      Enum.each(existing_commanders, fn dc ->
+        dc |> DeckCard.changeset(%{board: "main"}) |> Repo.update!()
+      end)
+
+      # Set this card as commander
+      deck_card = Repo.get!(DeckCard, deck_card_id)
+
+      deck_card
+      |> DeckCard.changeset(%{board: "commander"})
+      |> Repo.update()
+    end)
   end
 end

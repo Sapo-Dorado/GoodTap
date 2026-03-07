@@ -72,6 +72,38 @@ defmodule Goodtap.Games do
     Repo.delete(game)
   end
 
+  def delete_game(game) do
+    Repo.delete(game)
+  end
+
+  # Begin sideboarding phase: store current state in game_state for restart
+  def start_sideboarding(game) do
+    new_state =
+      (game.game_state || %{})
+      |> Map.put("sideboard_ready", %{"host" => false, "opponent" => false})
+
+    game
+    |> Game.changeset(%{game_state: new_state, status: "sideboarding"})
+    |> Repo.update()
+  end
+
+  # Mark a player as ready after sideboarding. Returns {:ok, :waiting} or {:ok, :ready}
+  def submit_sideboard(game, player_role) do
+    state = game.game_state || %{}
+    ready = Map.get(state, "sideboard_ready", %{})
+    new_ready = Map.put(ready, player_role, true)
+    new_state = Map.put(state, "sideboard_ready", new_ready)
+
+    game
+    |> Game.changeset(%{game_state: new_state})
+    |> Repo.update()
+  end
+
+  def both_sideboard_ready?(game) do
+    ready = get_in(game.game_state, ["sideboard_ready"]) || %{}
+    Map.get(ready, "host") == true && Map.get(ready, "opponent") == true
+  end
+
   def maybe_start_game(game) do
     state = game.game_state || %{}
     host_deck = state["host_deck_id"]
@@ -106,6 +138,14 @@ defmodule Goodtap.Games do
 
   def broadcast_game_ended(game_id) do
     Phoenix.PubSub.broadcast(Goodtap.PubSub, "game:#{game_id}", :game_ended)
+  end
+
+  def broadcast_sideboarding_started(game) do
+    Phoenix.PubSub.broadcast(Goodtap.PubSub, "game:#{game.id}", {:sideboarding_started, game})
+  end
+
+  def broadcast_game_restarted(game) do
+    Phoenix.PubSub.broadcast(Goodtap.PubSub, "game:#{game.id}", {:game_restarted, game})
   end
 
   def subscribe_to_game(game_id) do

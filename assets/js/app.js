@@ -9,11 +9,13 @@ import topbar from "../vendor/topbar"
 import DragDrop from "./hooks/drag_drop"
 import CopyToClipboard from "./hooks/copy_to_clipboard"
 import Battlefield from "./hooks/battlefield"
+import CounterButton from "./hooks/counter_button"
 
 const Hooks = {
   DragDrop,
   CopyToClipboard,
   Battlefield,
+  CounterButton,
 }
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

@@ -109,7 +109,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Move to Battlefield ──────────────────────────────────────────────────
 
-  def move_to_battlefield(state, player, instance_id, source_zone, x, y) do
+  def move_to_battlefield(state, player, instance_id, source_zone, x, y, zone_side \\ "mine") do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       {fx, fy} = nudge_if_occupied(state, player, x, y, nil)
       card =
@@ -117,15 +117,17 @@ defmodule Goodtap.GameEngine.Actions do
         |> Map.put("tapped", false)
         |> Map.put("x", fx)
         |> Map.put("y", fy)
+        |> Map.put("zone_side", zone_side)
 
       {:ok, append_to_zone(state, player, "battlefield", card)}
     end
   end
 
-  def update_battlefield_position(state, player, instance_id, x, y) do
+  def update_battlefield_position(state, player, instance_id, x, y, zone_side \\ nil) do
     {fx, fy} = nudge_if_occupied(state, player, x, y, instance_id)
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
-      card |> Map.put("x", fx) |> Map.put("y", fy)
+      card = card |> Map.put("x", fx) |> Map.put("y", fy)
+      if zone_side, do: Map.put(card, "zone_side", zone_side), else: card
     end)
   end
 
@@ -323,6 +325,27 @@ defmodule Goodtap.GameEngine.Actions do
     case find_in_zone(state, player, "battlefield", instance_id) do
       nil ->
         {:error, "Card not found on battlefield"}
+
+      original ->
+        {fx, _} = nudge_if_occupied(state, player, original["x"], original["y"], nil)
+        token =
+          original
+          |> Map.put("instance_id", Ecto.UUID.generate())
+          |> Map.put("is_token", true)
+          |> Map.put("x", fx)
+          |> Map.put("y", original["y"])
+
+        {:ok, append_to_zone(state, player, "battlefield", token)}
+    end
+  end
+
+  # Copy a card from the opponent's battlefield onto the player's battlefield.
+  def copy_opponent_card(state, player, instance_id) do
+    opp = if player == "host", do: "opponent", else: "host"
+
+    case find_in_zone(state, opp, "battlefield", instance_id) do
+      nil ->
+        {:error, "Card not found on opponent's battlefield"}
 
       original ->
         {fx, _} = nudge_if_occupied(state, player, original["x"], original["y"], nil)

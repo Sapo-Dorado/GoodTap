@@ -3,13 +3,14 @@ defmodule Goodtap.Decks.Importers.Plaintext do
   Imports a deck from a plain text decklist in the standard MTG format:
 
       4 Lightning Bolt
-      2 Snapcaster Mage
+      2 Snapcaster Mage (MH2) 123
 
       Sideboard:
       2 Negate
 
   Lines starting with a number followed by a card name are parsed.
-  A "Sideboard" or "Sideboard:" line switches subsequent cards to the sideboard board.
+  Optionally includes a set code and collector number: `(SET) number`.
+  A "Sideboard" or "Sideboard:" line switches subsequent cards to the sideboard.
   Empty lines are ignored.
   """
 
@@ -23,11 +24,14 @@ defmodule Goodtap.Decks.Importers.Plaintext do
     end
   end
 
-  # Matches: "4 Lightning Bolt (CLB) 141" or "4 Lightning Bolt"
-  # Captures qty and card name, stripping trailing "(SET) collector#"
-  @card_line ~r/^(\d+)[x\s]+([^(]+?)(?:\s+\([A-Z0-9]+\)\s+[\w\-]+)?\s*$/
+  # Matches lines like:
+  #   4 Lightning Bolt
+  #   4 Lightning Bolt (MH2) 123
+  #   4 The Modern Age / Vector Glider (NEO) 66
+  # Groups: qty, name, set_code (optional), collector_number (optional)
+  @card_line ~r/^(\d+)[x\s]+([^(]+?)(?:\s+\(([A-Z0-9]+)\)\s+([\w\-]+))?\s*$/
 
-  # Arena metadata lines to skip: "About", "Deck", "Name <anything>", "Commander", "Companion"
+  # Arena metadata lines to skip
   @skip_line ~r/^(About|Deck|Name\s|Commander$|Companion$)/i
 
   defp parse(text) do
@@ -52,16 +56,26 @@ defmodule Goodtap.Decks.Importers.Plaintext do
 
           true ->
             case Regex.run(@card_line, line) do
-              [_, qty_str, name] ->
+              [_, qty_str, name | rest] ->
                 qty = String.to_integer(qty_str)
+
                 if qty == 0 do
                   {acc, board}
                 else
+                  {set_code, collector_number} =
+                    case rest do
+                      [set, num | _] when set != "" -> {String.downcase(set), num}
+                      _ -> {nil, nil}
+                    end
+
                   entry = %{
                     name: String.trim(name),
                     quantity: qty,
-                    board: board
+                    board: board,
+                    set_code: set_code,
+                    collector_number: collector_number
                   }
+
                   {[entry | acc], board}
                 end
 

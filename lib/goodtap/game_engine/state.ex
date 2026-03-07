@@ -12,15 +12,25 @@ defmodule Goodtap.GameEngine.State do
     host_state = build_player_state(host, host_deck_id)
     opponent_state = build_player_state(opponent, opponent_deck_id)
 
+    host_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
+    opponent_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
+
     %{
       "host" => host_state,
-      "opponent" => opponent_state
+      "opponent" => opponent_state,
+      "die_roll" => %{
+        "host" => host_roll,
+        "opponent" => opponent_roll
+      }
     }
   end
 
   defp build_player_state(user, deck_id) do
     card_names = Decks.expand_deck_card_names(deck_id)
-    cards = Catalog.list_cards_by_names(Enum.uniq(card_names))
+    commander_entry = Decks.get_commander(deck_id)
+
+    all_names = if commander_entry, do: [commander_entry.card_name | card_names], else: card_names
+    cards = Catalog.list_cards_by_names(Enum.uniq(all_names))
     card_map = Map.new(cards, &{&1.name, &1})
 
     instances =
@@ -38,6 +48,27 @@ defmodule Goodtap.GameEngine.State do
 
     {hand, deck} = Enum.split(instances, 7)
 
+    # Place commander on battlefield at a fixed initial position
+    battlefield =
+      if commander_entry do
+        case Map.fetch(card_map, commander_entry.card_name) do
+          {:ok, card} ->
+            commander_instance =
+              build_card_instance(card)
+              |> Map.put("x", 0.5)
+              |> Map.put("y", 0.5)
+
+            [commander_instance]
+
+          :error ->
+            require Logger
+            Logger.warning("Commander not found in catalog: #{inspect(commander_entry.card_name)}")
+            []
+        end
+      else
+        []
+      end
+
     %{
       "user_id" => user.id,
       "username" => user.username,
@@ -47,7 +78,7 @@ defmodule Goodtap.GameEngine.State do
       "zones" => %{
         "hand" => hand,
         "deck" => deck,
-        "battlefield" => [],
+        "battlefield" => battlefield,
         "graveyard" => [],
         "exile" => []
       }

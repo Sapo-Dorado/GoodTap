@@ -2,6 +2,7 @@ defmodule Goodtap.Catalog do
   import Ecto.Query, warn: false
   alias Goodtap.Repo
   alias Goodtap.Catalog.Card
+  alias Goodtap.Catalog.CardPrinting
 
   def get_card!(id), do: Repo.get!(Card, id)
 
@@ -21,11 +22,30 @@ defmodule Goodtap.Catalog do
     |> Repo.all()
   end
 
+  # Returns {results, total_count} for display "Showing X of Y"
+  def search_cards_paged(query, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 20)
+    token_only = Keyword.get(opts, :token_only, false)
+    search = "%#{query}%"
+
+    base =
+      if token_only do
+        Card |> where([c], c.is_token and ilike(c.name, ^search))
+      else
+        Card |> where([c], ilike(c.name, ^search))
+      end
+
+    total = Repo.aggregate(base, :count, :id)
+    results = base |> order_by([c], c.name) |> limit(^limit) |> Repo.all()
+
+    {results, total}
+  end
+
   def search_tokens(query, limit \\ 20) do
     search = "%#{query}%"
 
     Card
-    |> where([c], c.layout == "token" and ilike(c.name, ^search))
+    |> where([c], c.is_token and ilike(c.name, ^search))
     |> order_by([c], c.name)
     |> limit(^limit)
     |> Repo.all()
@@ -40,6 +60,22 @@ defmodule Goodtap.Catalog do
   def list_cards_by_names(names) when is_list(names) do
     Card
     |> where([c], c.name in ^names and not c.is_token)
+    |> Repo.all()
+  end
+
+  def get_printing(id), do: Repo.get(CardPrinting, id)
+
+  def get_printing_by_set(set_code, collector_number) do
+    CardPrinting
+    |> where([p], p.set_code == ^set_code and p.collector_number == ^collector_number)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  def get_printings_for_card(card_name) do
+    CardPrinting
+    |> where([p], p.card_name == ^card_name)
+    |> order_by([p], [p.set_code, p.collector_number])
     |> Repo.all()
   end
 

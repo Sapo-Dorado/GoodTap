@@ -385,9 +385,12 @@ const DragDrop = {
       const draggedEl = this.draggedEl;
       this.dragging = null;
 
-      const isSameZone = dropInfo && dropInfo.zone === zone;
-      const isBattlefield = dropInfo && dropInfo.zone === "battlefield";
-      const isListZone = dropInfo && dropInfo.zone in LIST_ZONES;
+      // Normalize opp-battlefield to battlefield for logic purposes
+      const dropZone = dropInfo ? (dropInfo.zone === "opp-battlefield" ? "battlefield" : dropInfo.zone) : null;
+
+      const isSameZone = dropZone === zone;
+      const isBattlefield = dropZone === "battlefield";
+      const isListZone = dropZone in LIST_ZONES;
 
       if (dropInfo && (!isSameZone || isBattlefield || isListZone)) {
         const zoneRect = dropInfo.el.getBoundingClientRect();
@@ -399,6 +402,15 @@ const DragDrop = {
         const insertIndex = isListZone ? (this._insertIndex ?? null) : null;
         this._insertIndex = null;
         this.cleanupDragGhost();
+
+        // opp-battlefield is rotated 180° in the DOM: its layout rect is unrotated,
+        // so coordinates computed from getBoundingClientRect() are visually inverted.
+        // Flip them so the card appears exactly where it was dropped visually,
+        // and so the stored position is correct within the rotated element's space.
+        if (dropInfo.zone === "opp-battlefield") {
+          relX = 1 - relX;
+          relY = 1 - relY;
+        }
 
         // ── Optimistic rendering ──────────────────────────────────────────
         //
@@ -414,10 +426,8 @@ const DragDrop = {
         // Skipped for: → graveyard / exile / deck (complex pile HTML),
         // tokens → hand (server silently drops them), and find-mode reorders.
 
-        if (isBattlefield && zone === "battlefield") {
-          // ── Battlefield reposition ──
-          // Server renders: left: trunc(x * 100)%; top: trunc(y * 100)%
-          // We must use the same trunc so morphdom sees an identical style string.
+        if (isBattlefield && zone === "battlefield" && dropInfo.zone !== "opp-battlefield") {
+          // ── Battlefield reposition (staying on my side) ──
           ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
           card.style.left = Math.trunc(relX * 100) + "%";
           card.style.top = Math.trunc(relY * 100) + "%";
@@ -426,8 +436,6 @@ const DragDrop = {
 
           // Reposition other selected cards by the same delta
           if (this.extraGhosts.length > 0) {
-            // rect was captured before display:none at commitDrag, so it holds the
-            // card's original on-screen position. Convert to fractional zone coords.
             const origPrimaryXPct = (rect.left - zoneRect.left) / zoneRect.width;
             const origPrimaryYPct = (rect.top - zoneRect.top) / zoneRect.height;
             const dx = relX - origPrimaryXPct;
@@ -473,11 +481,8 @@ const DragDrop = {
           }
           // If isFind or insertIndex is null, draggedEl stays set; server re-render restores.
 
-        } else if (dropInfo.zone === "battlefield" && zone !== "battlefield") {
-          // ── Cross-zone → battlefield ──
-          // Build the exact element the server will render for a battlefield card
-          // and append it to #my-battlefield.  morphdom finds it by id and patches
-          // any attribute differences in-place — no positional jump.
+        } else if (isBattlefield && zone !== "battlefield" && dropInfo.zone !== "opp-battlefield") {
+          // ── Cross-zone → my battlefield ──
           const bf = document.getElementById("my-battlefield");
           if (bf) {
             ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
@@ -495,11 +500,10 @@ const DragDrop = {
             el.setAttribute("data-is-token", card.dataset.isToken || "false");
             el.innerHTML = `<div class="flex flex-col items-center"><div class="card-draggable"><img src="${imgSrc}" class="card-image rounded shadow-lg" draggable="false" /></div></div>`;
             bf.appendChild(el);
-            // Original element (in source zone) stays hidden; server patch removes it.
             this.draggedEl = null;
           }
 
-        } else if (dropInfo.zone === "hand" && card.dataset.isToken !== "true") {
+        } else if (dropZone === "hand" && card.dataset.isToken !== "true") {
           // ── Cross-zone → hand ──
           // Tokens are silently dropped by the server, so skip them.
           // For real cards, build the hand card element at the insert position.
@@ -537,7 +541,7 @@ const DragDrop = {
           instance_id: instanceId,
           from_zone: zone,
           owner: owner,
-          target_zone: dropInfo.zone,
+          target_zone: dropInfo.zone,  // send raw zone name; server normalizes opp-battlefield
           x: relX,
           y: relY,
           insert_index: insertIndex,
@@ -724,24 +728,25 @@ const DragDrop = {
     const dropInfo = this.findDropZone(x, y);
     if (!dropInfo) return;
 
+    const dZone = dropInfo.zone === "opp-battlefield" ? "battlefield" : dropInfo.zone;
     const isPileEl = !!dropInfo.el.dataset.pileZone;
 
-    if (dropInfo.zone in LIST_ZONES && !isPileEl) {
+    if (dZone in LIST_ZONES && !isPileEl) {
       // Open-zone popup: show insert ghost at the appropriate position
-      this.showInsertGhost(dropInfo.zone, dropInfo.el, x);
+      this.showInsertGhost(dZone, dropInfo.el, x);
       return;
     }
 
-    if (isPileEl && dropInfo.zone !== fromZone) {
+    if (isPileEl && dZone !== fromZone) {
       // Small pile element: show a card ghost image floating over the pile.
       // Reset _insertIndex so the drop sends null → server uses default (prepend/top).
       this._insertIndex = null;
-      this.showPileGhost(dropInfo.zone, dropInfo.el);
+      this.showPileGhost(dZone, dropInfo.el);
       return;
     }
 
     // Other non-battlefield zones: purple border overlay
-    if (dropInfo.zone !== "battlefield" && dropInfo.zone !== "opp-battlefield" && dropInfo.zone !== fromZone) {
+    if (dZone !== "battlefield" && dZone !== fromZone) {
       const r = dropInfo.el.getBoundingClientRect();
       this.dropZoneGhost = document.createElement("div");
       this.dropZoneGhost.style.cssText = `

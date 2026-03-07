@@ -33,7 +33,7 @@ cards_data
         id: card["id"],
         name: card["name"],
         layout: card["layout"],
-        is_token: card["layout"] == "token",
+        is_token: card["layout"] in ["token", "double_faced_token"],
         data: card,
         inserted_at: now,
         updated_at: now

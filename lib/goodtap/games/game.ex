@@ -21,7 +21,7 @@ defmodule Goodtap.Games.Game do
     game
     |> cast(attrs, [:id, :host_id, :opponent_id, :status, :game_state])
     |> validate_required([:id, :host_id, :status])
-    |> validate_inclusion(:status, ["waiting", "setup", "active", "ended"])
+    |> validate_inclusion(:status, ["waiting", "setup", "active", "ended", "sideboarding"])
     |> unique_constraint(:id, name: :games_pkey)
   end
 end
