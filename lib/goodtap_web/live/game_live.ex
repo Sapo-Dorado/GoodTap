@@ -33,7 +33,11 @@ defmodule GoodtapWeb.GameLive do
       deck_id = get_in(game_state, [my_role, "deck_id"])
       sideboard_deck = if sideboarding && deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
 
-      show_die_roll = map_size(game_state) > 0 && is_map(game_state["die_roll"])
+      # Die roll is shown once per player per game. Dismissal is saved to game_state
+      # under "die_roll_dismissed" so it survives page reloads. Die roll only exists
+      # on first game start — sideboard restarts do not generate one (roll_die: false).
+      die_roll_dismissed = get_in(game_state, ["die_roll_dismissed", my_role]) == true
+      show_die_roll = map_size(game_state) > 0 && is_map(game_state["die_roll"]) && !die_roll_dismissed
 
       {:ok,
        assign(socket,
@@ -51,6 +55,7 @@ defmodule GoodtapWeb.GameLive do
          token_search: nil,
          token_place_x: 0.1,
          token_place_y: 0.5,
+         token_filter: :tokens_only,
          # Add counter
          adding_counter_to: nil,
          counter_name_input: "",
@@ -731,6 +736,11 @@ defmodule GoodtapWeb.GameLive do
     {:noreply, assign(socket, token_search: nil)}
   end
 
+  def handle_event("toggle_token_filter", _params, socket) do
+    filter = if socket.assigns.token_filter == :tokens_only, do: :all, else: :tokens_only
+    {:noreply, assign(socket, token_filter: filter)}
+  end
+
   # ─── Find Card ────────────────────────────────────────────────────────────
 
   def handle_event("find_card_search", %{"query" => query}, socket) do
@@ -745,7 +755,12 @@ defmodule GoodtapWeb.GameLive do
   # ─── End Game ─────────────────────────────────────────────────────────────
 
   def handle_event("dismiss_die_roll", _params, socket) do
-    {:noreply, assign(socket, die_roll_modal: false)}
+    # Save dismissal per-player to game_state so it survives reloads.
+    # See mount/3 where this flag is read to decide whether to show the modal.
+    dismissed = Map.get(socket.assigns.game_state, "die_roll_dismissed", %{})
+    new_state = Map.put(socket.assigns.game_state, "die_roll_dismissed", Map.put(dismissed, socket.assigns.my_role, true))
+    {:ok, _} = Games.update_game_state(socket.assigns.game, new_state)
+    {:noreply, assign(socket, die_roll_modal: false, game_state: new_state)}
   end
 
   def handle_event("show_end_game", _params, socket) do
@@ -1686,13 +1701,24 @@ defmodule GoodtapWeb.GameLive do
         <div class="bg-gray-800 rounded-xl p-6 w-full max-w-lg mx-4">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold">Create Token / Spawn Card</h2>
-            <button phx-click="close_token_search" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+            <div class="flex items-center gap-4">
+              <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={@token_filter == :tokens_only}
+                  phx-click="toggle_token_filter"
+                  class="checkbox checkbox-sm checkbox-primary"
+                />
+                Tokens only
+              </label>
+              <button phx-click="close_token_search" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
           </div>
           <.live_component
             module={GoodtapWeb.CardSearchComponent}
             id="token-search"
-            filter={:tokens_only}
-            show_filter_toggle={true}
+            filter={@token_filter}
+            show_filter_toggle={false}
             on_select={:token_selected}
           />
         </div>

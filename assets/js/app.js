@@ -10,12 +10,14 @@ import DragDrop from "./hooks/drag_drop"
 import CopyToClipboard from "./hooks/copy_to_clipboard"
 import Battlefield from "./hooks/battlefield"
 import CounterButton from "./hooks/counter_button"
+import CardPreview from "./hooks/card_preview"
 
 const Hooks = {
   DragDrop,
   CopyToClipboard,
   Battlefield,
   CounterButton,
+  CardPreview,
 }
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

@@ -36,16 +36,20 @@ defmodule GoodtapWeb.CardSearchComponent do
   end
 
   def update(assigns, socket) do
+    new_filter = Map.get(assigns, :filter, :all)
+    old_filter = socket.assigns[:filter]
+
     socket =
       socket
       |> assign(:on_select, assigns.on_select)
       |> assign(:show_filter_toggle, Map.get(assigns, :show_filter_toggle, false))
+      |> assign(:filter, new_filter)
 
-    # Only set filter from props on first mount, not on subsequent updates,
-    # so the user's runtime filter choice is preserved.
+    # Re-run search if filter changed and there's an active query
     socket =
-      if socket.assigns.query == "" do
-        assign(socket, :filter, Map.get(assigns, :filter, :all))
+      if old_filter != nil && old_filter != new_filter && socket.assigns.query != "" do
+        {results, total} = Catalog.search_cards_paged(socket.assigns.query, limit: @default_limit, filter: new_filter)
+        assign(socket, results: results, total: total)
       else
         socket
       end
@@ -151,7 +155,7 @@ defmodule GoodtapWeb.CardSearchComponent do
       </div>
 
       <%!-- Results grid --%>
-      <div class="flex flex-wrap gap-3 max-h-72 overflow-y-auto py-1">
+      <div class="flex flex-wrap gap-3 max-h-72 overflow-y-auto py-1" id={"card-search-results-#{@myself.cid}"} phx-hook="CardPreview">
         <%= for card <- @results do %>
           <% img = card_image(card, @selected_printings) %>
           <div class="flex flex-col items-center gap-1 w-24">
@@ -163,7 +167,7 @@ defmodule GoodtapWeb.CardSearchComponent do
               class="rounded hover:ring-2 hover:ring-purple-400 transition-all"
               title={card.name}
             >
-              <img src={img} class="h-28 w-auto rounded shadow" draggable="false" />
+              <img src={img} class="h-28 w-auto rounded shadow" draggable="false" data-card-img={img} />
             </button>
             <span class="text-xs text-gray-300 w-full truncate text-center">{card.name}</span>
             <%!-- Printing selector --%>
