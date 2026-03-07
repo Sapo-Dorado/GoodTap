@@ -128,6 +128,35 @@ defmodule Goodtap.Decks do
     end
   end
 
+  # Move a single copy of a card to another board (for sideboarding one at a time)
+  def move_one_to_board(deck_card, board) do
+    Repo.transact(fn ->
+      existing = Repo.get_by(DeckCard, deck_id: deck_card.deck_id, card_name: deck_card.card_name, board: board)
+
+      if deck_card.quantity <= 1 do
+        # Move the whole entry
+        if existing do
+          Repo.update_all(from(dc in DeckCard, where: dc.id == ^existing.id), inc: [quantity: 1])
+          Repo.delete!(deck_card)
+        else
+          deck_card |> DeckCard.changeset(%{board: board}) |> Repo.update!()
+        end
+      else
+        # Decrement source, increment or create target
+        deck_card |> DeckCard.changeset(%{quantity: deck_card.quantity - 1}) |> Repo.update!()
+        if existing do
+          Repo.update_all(from(dc in DeckCard, where: dc.id == ^existing.id), inc: [quantity: 1])
+        else
+          %DeckCard{}
+          |> DeckCard.changeset(%{deck_id: deck_card.deck_id, card_name: deck_card.card_name, printing_id: deck_card.printing_id, quantity: 1, board: board})
+          |> Repo.insert!()
+        end
+      end
+
+      {:ok, :done}
+    end)
+  end
+
   def get_deck_card!(id), do: Repo.get!(DeckCard, id)
 
   # Returns a flat list of card names repeated by quantity (for shuffling into deck)

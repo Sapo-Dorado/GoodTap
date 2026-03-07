@@ -29,6 +29,12 @@ defmodule GoodtapWeb.GameLive do
 
       Games.subscribe_to_game(game.id)
 
+      sideboarding = game.status == "sideboarding"
+      deck_id = get_in(game_state, [my_role, "deck_id"])
+      sideboard_deck = if sideboarding && deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
+
+      show_die_roll = map_size(game_state) > 0 && is_map(game_state["die_roll"])
+
       {:ok,
        assign(socket,
          game: game,
@@ -50,12 +56,11 @@ defmodule GoodtapWeb.GameLive do
          counter_name_input: "",
          # End game
          end_game_modal: false,
-         # Die roll modal (shown once per session on first load)
-         die_roll_modal: map_size(game_state) > 0 && is_map(game_state["die_roll"]),
-         # Sideboarding: nil | :waiting | :submitted
-         sideboard_modal: game.status == "sideboarding",
-         sideboard_deck: nil,
-         # List of pending swaps: [{deck_card_id, qty, to_board}] — local until submit
+         # Die roll modal
+         die_roll_modal: show_die_roll,
+         # Sideboarding
+         sideboard_modal: sideboarding,
+         sideboard_deck: sideboard_deck,
          sideboard_pending: [],
          # Multi-card selection
          selected_cards: MapSet.new(),
@@ -779,21 +784,16 @@ defmodule GoodtapWeb.GameLive do
     )}
   end
 
-  def handle_event("sideboard_move", %{"id" => id, "to_board" => to_board, "qty" => qty_str}, socket) do
-    qty = String.to_integer(qty_str)
-    pending = [{id, qty, to_board} | socket.assigns.sideboard_pending]
-    # Apply pending moves to local deck view (optimistic)
-    deck = apply_pending_to_deck(socket.assigns.sideboard_deck, [{id, qty, to_board}])
-    {:noreply, assign(socket, sideboard_pending: pending, sideboard_deck: deck)}
+  def handle_event("sideboard_move", %{"id" => id, "to_board" => to_board}, socket) do
+    deck_card = Decks.get_deck_card!(id)
+    {:ok, _} = Decks.move_one_to_board(deck_card, to_board)
+    deck_id = socket.assigns.sideboard_deck.id
+    {:noreply, assign(socket, sideboard_deck: Decks.get_deck_with_cards!(deck_id))}
   end
 
   def handle_event("submit_sideboard", _params, socket) do
     game = socket.assigns.game
     my_role = socket.assigns.my_role
-    pending = socket.assigns.sideboard_pending
-
-    # Apply actual DB changes
-    Decks.apply_sideboard_swaps(pending)
 
     {:ok, updated_game} = Games.submit_sideboard(game, my_role)
 
@@ -806,7 +806,7 @@ defmodule GoodtapWeb.GameLive do
       host = updated_game.host
       opponent = updated_game.opponent
 
-      new_state = State.initialize(host, opponent, host_deck_id, opponent_deck_id)
+      new_state = State.initialize(host, opponent, host_deck_id, opponent_deck_id, roll_die: false)
       {:ok, restarted} = Games.update_game_state(updated_game, new_state)
       {:ok, restarted} = Games.start_game(restarted)
 
@@ -817,7 +817,7 @@ defmodule GoodtapWeb.GameLive do
         game_state: new_state,
         sideboard_modal: false,
         sideboard_pending: [],
-        die_roll_modal: is_map(new_state["die_roll"])
+        die_roll_modal: false
       )}
     else
       {:noreply, assign(socket, game: updated_game, sideboard_pending: [])}
@@ -832,40 +832,6 @@ defmodule GoodtapWeb.GameLive do
   end
 
   # ─── Private Helpers ─────────────────────────────────────────────────────
-
-  # Optimistically apply a single pending sideboard swap to the deck struct
-  defp apply_pending_to_deck(nil, _swaps), do: nil
-  defp apply_pending_to_deck(deck, swaps) do
-    updated_cards =
-      Enum.reduce(swaps, deck.deck_cards, fn {id, qty, to_board}, cards ->
-        case Enum.find_index(cards, &(&1.id == id)) do
-          nil -> cards
-          idx ->
-            dc = Enum.at(cards, idx)
-            cond do
-              qty >= dc.quantity ->
-                # Move all: update board
-                List.replace_at(cards, idx, %{dc | board: to_board})
-
-              true ->
-                # Move partial: split
-                cards
-                |> List.replace_at(idx, %{dc | quantity: dc.quantity - qty})
-                |> then(fn cs ->
-                  existing_idx = Enum.find_index(cs, &(&1.id != id && &1.card_name == dc.card_name && &1.board == to_board))
-                  if existing_idx do
-                    existing = Enum.at(cs, existing_idx)
-                    List.replace_at(cs, existing_idx, %{existing | quantity: existing.quantity + qty})
-                  else
-                    cs ++ [%{dc | id: "pending-#{System.unique_integer()}", quantity: qty, board: to_board}]
-                  end
-                end)
-            end
-        end
-      end)
-
-    %{deck | deck_cards: updated_cards}
-  end
 
   defp apply_action(socket, action_fn) do
     state = socket.assigns.game_state
@@ -1840,23 +1806,17 @@ defmodule GoodtapWeb.GameLive do
                 <h3 class="text-sm font-semibold text-gray-400 mb-2">Main Deck ({Enum.sum(Enum.map(main_cards, & &1.quantity))})</h3>
                 <div class="overflow-y-auto flex-1 space-y-0.5">
                   <%= for dc <- main_cards do %>
-                    <div class="flex items-center gap-2 text-sm group py-0.5">
-                      <span class="text-gray-400 w-6 text-right shrink-0">{dc.quantity}x</span>
+                    <div class="flex items-center gap-2 text-sm py-0.5">
+                      <span class="text-gray-400 w-6 text-right shrink-0 tabular-nums">{dc.quantity}x</span>
                       <span class="flex-1 text-white truncate">{dc.card_name}</span>
                       <%= if !already_submitted do %>
-                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <%= for qty <- 1..dc.quantity do %>
-                            <button
-                              phx-click="sideboard_move"
-                              phx-value-id={dc.id}
-                              phx-value-qty={qty}
-                              phx-value-to_board="sideboard"
-                              class="text-xs bg-gray-700 hover:bg-gray-600 px-1 rounded"
-                            >
-                              →{qty}
-                            </button>
-                          <% end %>
-                        </div>
+                        <button
+                          phx-click="sideboard_move"
+                          phx-value-id={dc.id}
+                          phx-value-to_board="sideboard"
+                          class="text-xs bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white px-2 py-0.5 rounded shrink-0"
+                          title="Move 1 to sideboard"
+                        >→</button>
                       <% end %>
                     </div>
                   <% end %>
@@ -1868,23 +1828,17 @@ defmodule GoodtapWeb.GameLive do
                 <h3 class="text-sm font-semibold text-gray-400 mb-2">Sideboard ({Enum.sum(Enum.map(side_cards, & &1.quantity))})</h3>
                 <div class="overflow-y-auto flex-1 space-y-0.5">
                   <%= for dc <- side_cards do %>
-                    <div class="flex items-center gap-2 text-sm group py-0.5">
+                    <div class="flex items-center gap-2 text-sm py-0.5">
                       <%= if !already_submitted do %>
-                        <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <%= for qty <- 1..dc.quantity do %>
-                            <button
-                              phx-click="sideboard_move"
-                              phx-value-id={dc.id}
-                              phx-value-qty={qty}
-                              phx-value-to_board="main"
-                              class="text-xs bg-gray-700 hover:bg-gray-600 px-1 rounded"
-                            >
-                              ←{qty}
-                            </button>
-                          <% end %>
-                        </div>
+                        <button
+                          phx-click="sideboard_move"
+                          phx-value-id={dc.id}
+                          phx-value-to_board="main"
+                          class="text-xs bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white px-2 py-0.5 rounded shrink-0"
+                          title="Move 1 to main deck"
+                        >←</button>
                       <% end %>
-                      <span class="text-gray-400 w-6 text-right shrink-0">{dc.quantity}x</span>
+                      <span class="text-gray-400 w-6 text-right shrink-0 tabular-nums">{dc.quantity}x</span>
                       <span class="flex-1 text-white truncate">{dc.card_name}</span>
                     </div>
                   <% end %>

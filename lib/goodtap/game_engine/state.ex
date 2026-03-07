@@ -8,21 +8,19 @@ defmodule Goodtap.GameEngine.State do
   Initialize full game state when both players have selected decks.
   Returns the game_state map ready to be stored in the Game record.
   """
-  def initialize(host, opponent, host_deck_id, opponent_deck_id) do
+  def initialize(host, opponent, host_deck_id, opponent_deck_id, opts \\ []) do
     host_state = build_player_state(host, host_deck_id)
     opponent_state = build_player_state(opponent, opponent_deck_id)
 
-    host_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
-    opponent_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
+    base = %{"host" => host_state, "opponent" => opponent_state}
 
-    %{
-      "host" => host_state,
-      "opponent" => opponent_state,
-      "die_roll" => %{
-        "host" => host_roll,
-        "opponent" => opponent_roll
-      }
-    }
+    if Keyword.get(opts, :roll_die, true) do
+      host_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
+      opponent_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
+      Map.put(base, "die_roll", %{"host" => host_roll, "opponent" => opponent_roll})
+    else
+      base
+    end
   end
 
   defp build_player_state(user, deck_id) do

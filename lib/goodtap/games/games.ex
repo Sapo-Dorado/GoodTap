@@ -87,14 +87,15 @@ defmodule Goodtap.Games do
     |> Repo.update()
   end
 
-  # Mark a player as ready after sideboarding. Returns {:ok, :waiting} or {:ok, :ready}
+  # Mark a player as ready after sideboarding. Reloads from DB first to avoid overwriting the other player's flag.
   def submit_sideboard(game, player_role) do
-    state = game.game_state || %{}
+    fresh = get_game!(game.id)
+    state = fresh.game_state || %{}
     ready = Map.get(state, "sideboard_ready", %{})
     new_ready = Map.put(ready, player_role, true)
     new_state = Map.put(state, "sideboard_ready", new_ready)
 
-    game
+    fresh
     |> Game.changeset(%{game_state: new_state})
     |> Repo.update()
   end
