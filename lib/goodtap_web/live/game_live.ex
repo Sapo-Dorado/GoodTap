@@ -97,8 +97,7 @@ defmodule GoodtapWeb.GameLive do
   end
 
   def handle_info({:sideboarding_started, game}, socket) do
-    deck_id = get_in(game.game_state, [socket.assigns.my_role, "deck_id"])
-    sideboard_deck = if deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
+    sideboard_deck = build_sideboard_deck(game.game_state, socket.assigns.my_role)
     {:noreply, assign(socket, game: game, game_state: game.game_state, sideboard_modal: true, sideboard_deck: sideboard_deck, sideboard_pending: [])}
   end
 
@@ -874,8 +873,7 @@ defmodule GoodtapWeb.GameLive do
     {:ok, updated_game} = Games.start_sideboarding(game)
     Games.broadcast_sideboarding_started(updated_game)
 
-    deck_id = get_in(updated_game.game_state, [socket.assigns.my_role, "deck_id"])
-    sideboard_deck = if deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
+    sideboard_deck = build_sideboard_deck(updated_game.game_state, socket.assigns.my_role)
 
     {:noreply, assign(socket,
       game: updated_game,
@@ -886,29 +884,93 @@ defmodule GoodtapWeb.GameLive do
     )}
   end
 
+  def handle_event("reset_sideboard", _params, socket) do
+    # Reset to original DB decklist
+    deck_id = get_in(socket.assigns.game_state, [socket.assigns.my_role, "deck_id"])
+    sideboard_deck = if deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
+    {:noreply, assign(socket, sideboard_deck: sideboard_deck)}
+  end
+
   def handle_event("sideboard_move", %{"id" => id, "to_board" => to_board}, socket) do
-    deck_card = Decks.get_deck_card!(id)
-    {:ok, _} = Decks.move_one_to_board(deck_card, to_board)
-    deck_id = socket.assigns.sideboard_deck.id
-    {:noreply, assign(socket, sideboard_deck: Decks.get_deck_with_cards!(deck_id))}
+    # Move one copy in memory only — never touch the DB
+    id_int = String.to_integer(id)
+    deck = socket.assigns.sideboard_deck
+    cards = deck.deck_cards
+
+    source_card = Enum.find(cards, &(&1.id == id_int))
+
+    updated_cards =
+      if source_card do
+        dest_card = Enum.find(cards, &(&1.card_name == source_card.card_name && &1.board == to_board))
+
+        cards
+        |> Enum.map(fn dc ->
+          cond do
+            dc.id == id_int && dc.quantity > 1 ->
+              %{dc | quantity: dc.quantity - 1}
+            dc.id == id_int ->
+              nil  # remove entirely
+            dest_card && dc.id == dest_card.id ->
+              %{dc | quantity: dc.quantity + 1}
+            true ->
+              dc
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+        |> then(fn cs ->
+          # If no dest card existed, add a new entry
+          if dest_card do
+            cs
+          else
+            cs ++ [%{source_card | id: :"new_#{id_int}", board: to_board, quantity: 1}]
+          end
+        end)
+      else
+        cards
+      end
+
+    {:noreply, assign(socket, sideboard_deck: %{deck | deck_cards: updated_cards})}
   end
 
   def handle_event("submit_sideboard", _params, socket) do
     game = socket.assigns.game
     my_role = socket.assigns.my_role
+    deck = socket.assigns.sideboard_deck
 
-    {:ok, updated_game} = Games.submit_sideboard(game, my_role)
+    # Build card spec from in-memory deck (never touches DB)
+    card_names =
+      deck.deck_cards
+      |> Enum.filter(&(&1.board == "main"))
+      |> Enum.flat_map(&List.duplicate(&1.card_name, &1.quantity))
+
+    commander_entry = Enum.find(deck.deck_cards, &(&1.board == "commander"))
+    commander_name = commander_entry && commander_entry.card_name
+    deck_id = deck.id
+
+    card_spec = {card_names, commander_name, deck_id}
+
+    {:ok, updated_game} = Games.submit_sideboard_with_card_list(game, my_role, card_spec)
 
     if Games.both_sideboard_ready?(updated_game) do
-      # Both ready — reinitialize game
+      # Both ready — reinitialize game using stored card lists (no DB deck reads)
       state_data = updated_game.game_state
-      host_deck_id = get_in(state_data, ["host", "deck_id"])
-      opponent_deck_id = get_in(state_data, ["opponent", "deck_id"])
+      card_lists = state_data["sideboard_card_lists"] || %{}
+
+      host_spec = card_lists["host"]
+      opp_spec = card_lists["opponent"]
+
+      card_specs = %{
+        "host" => {host_spec["card_names"], host_spec["commander_name"], host_spec["deck_id"]},
+        "opponent" => {opp_spec["card_names"], opp_spec["commander_name"], opp_spec["deck_id"]}
+      }
 
       host = updated_game.host
       opponent = updated_game.opponent
 
-      new_state = State.initialize(host, opponent, host_deck_id, opponent_deck_id, roll_die: false)
+      new_state =
+        State.initialize_with_card_lists(host, opponent, card_specs, roll_die: false)
+        |> Map.put("sideboard_card_lists", card_lists)
+
       {:ok, restarted} = Games.update_game_state(updated_game, new_state)
       {:ok, restarted} = Games.start_game(restarted)
 
@@ -926,14 +988,73 @@ defmodule GoodtapWeb.GameLive do
     end
   end
 
-  def handle_event("cancel_sideboard", _params, socket) do
-    # Reload original deck (discard pending changes)
-    deck_id = get_in(socket.assigns.game_state, [socket.assigns.my_role, "deck_id"])
-    sideboard_deck = if deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
-    {:noreply, assign(socket, sideboard_modal: false, sideboard_pending: [], sideboard_deck: sideboard_deck)}
-  end
 
   # ─── Private Helpers ─────────────────────────────────────────────────────
+
+  # Build the starting deck for sideboarding.
+  # Uses the card list from the previous sideboard (stored in game_state) if available,
+  # so successive sideboards start from where the last one ended.
+  # Falls back to the original DB deck on first sideboard.
+  defp build_sideboard_deck(game_state, my_role) do
+    card_lists = get_in(game_state, ["sideboard_card_lists", my_role])
+
+    if card_lists do
+      deck_id = card_lists["deck_id"]
+      commander_name = card_lists["commander_name"]
+
+      # Build frequency map from the flat card_names list
+      main_counts =
+        Enum.reduce(card_lists["card_names"], %{}, fn name, acc ->
+          Map.update(acc, name, 1, &(&1 + 1))
+        end)
+
+      # Get original sideboard cards from DB to figure out what's "available" as sideboard
+      original_deck = Decks.get_deck_with_cards!(deck_id)
+      original_side =
+        original_deck.deck_cards
+        |> Enum.filter(&(&1.board == "sideboard"))
+        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, dc.quantity) end)
+
+      # Derive sideboard: original sideboard qty minus however many moved to main
+      # compared to original main. Simpler: reconstruct from original deck total counts.
+      original_main =
+        original_deck.deck_cards
+        |> Enum.filter(&(&1.board == "main"))
+        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, dc.quantity) end)
+
+      # For each card name that appears across main+side, compute current allocation
+      all_names =
+        Map.keys(original_main) ++ Map.keys(original_side) |> Enum.uniq()
+
+      deck_cards =
+        all_names
+        |> Enum.flat_map(fn name ->
+          orig_main = Map.get(original_main, name, 0)
+          orig_side = Map.get(original_side, name, 0)
+          total = orig_main + orig_side
+          cur_main = Map.get(main_counts, name, 0)
+          cur_side = total - cur_main
+
+          entries = []
+          entries = if cur_main > 0, do: entries ++ [%{id: :erlang.phash2({name, "main"}), card_name: name, board: "main", quantity: cur_main}], else: entries
+          entries = if cur_side > 0, do: entries ++ [%{id: :erlang.phash2({name, "sideboard"}), card_name: name, board: "sideboard", quantity: cur_side}], else: entries
+          entries
+        end)
+
+      commander_entries =
+        if commander_name do
+          [%{id: :erlang.phash2({commander_name, "commander"}), card_name: commander_name, board: "commander", quantity: 1}]
+        else
+          []
+        end
+
+      %{id: deck_id, deck_cards: commander_entries ++ deck_cards}
+    else
+      # First sideboard: load from DB
+      deck_id = get_in(game_state, [my_role, "deck_id"])
+      if deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
+    end
+  end
 
   defp apply_action(socket, action_fn) do
     state = socket.assigns.game_state
@@ -2011,9 +2132,9 @@ defmodule GoodtapWeb.GameLive do
               </div>
             </div>
 
-            <div class="flex gap-3 mt-4 justify-end">
+            <div class="flex gap-3 mt-4 justify-between">
               <%= if !already_submitted do %>
-                <button phx-click="cancel_sideboard" class="btn btn-ghost btn-sm">Cancel</button>
+                <button phx-click="reset_sideboard" class="btn btn-ghost btn-sm">Reset to Original</button>
                 <button phx-click="submit_sideboard" class="btn btn-primary btn-sm">Submit</button>
               <% end %>
             </div>

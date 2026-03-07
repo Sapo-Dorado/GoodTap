@@ -11,7 +11,21 @@ defmodule Goodtap.GameEngine.State do
   def initialize(host, opponent, host_deck_id, opponent_deck_id, opts \\ []) do
     host_state = build_player_state(host, host_deck_id, "host")
     opponent_state = build_player_state(opponent, opponent_deck_id, "opponent")
+    build_game_state(host_state, opponent_state, opts)
+  end
 
+  @doc """
+  Initialize game state with explicit card name lists (used for sideboard restarts
+  so the underlying deck in the DB is never modified).
+  card_specs is %{"host" => {card_names, commander_name, deck_id}, "opponent" => ...}
+  """
+  def initialize_with_card_lists(host, opponent, card_specs, opts \\ []) do
+    host_state = build_player_state_from_names(host, card_specs["host"], "host")
+    opponent_state = build_player_state_from_names(opponent, card_specs["opponent"], "opponent")
+    build_game_state(host_state, opponent_state, opts)
+  end
+
+  defp build_game_state(host_state, opponent_state, opts) do
     base = %{"host" => host_state, "opponent" => opponent_state}
 
     if Keyword.get(opts, :roll_die, true) do
@@ -26,6 +40,57 @@ defmodule Goodtap.GameEngine.State do
     else
       base
     end
+  end
+
+  defp build_player_state_from_names(user, {card_names, commander_name, deck_id}, role) do
+    all_names = if commander_name, do: [commander_name | card_names], else: card_names
+    cards = Catalog.list_cards_by_names(Enum.uniq(all_names))
+    card_map = Map.new(cards, &{&1.name, &1})
+
+    instances =
+      card_names
+      |> Enum.flat_map(fn name ->
+        case Map.fetch(card_map, name) do
+          {:ok, card} -> [build_card_instance(card)]
+          :error ->
+            require Logger
+            Logger.warning("Card not found in catalog, skipping: #{inspect(name)}")
+            []
+        end
+      end)
+      |> Enum.shuffle()
+
+    {hand_raw, deck} = Enum.split(instances, 7)
+    hand = Enum.map(hand_raw, &Map.put(&1, "known", %{"host" => role == "host", "opponent" => role == "opponent"}))
+
+    battlefield =
+      if commander_name do
+        case Map.fetch(card_map, commander_name) do
+          {:ok, card} ->
+            [build_card_instance(card) |> Map.put("x", 0.5) |> Map.put("y", 0.5)]
+          :error ->
+            require Logger
+            Logger.warning("Commander not found in catalog: #{inspect(commander_name)}")
+            []
+        end
+      else
+        []
+      end
+
+    %{
+      "user_id" => user.id,
+      "username" => user.username,
+      "life" => 20,
+      "trackers" => [],
+      "deck_id" => deck_id,
+      "zones" => %{
+        "hand" => hand,
+        "deck" => deck,
+        "battlefield" => battlefield,
+        "graveyard" => [],
+        "exile" => []
+      }
+    }
   end
 
   defp build_player_state(user, deck_id, role) do
