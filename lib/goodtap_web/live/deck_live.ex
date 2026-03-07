@@ -11,6 +11,8 @@ defmodule GoodtapWeb.DeckLive do
     if deck.user_id != user.id do
       {:ok, push_navigate(socket, to: ~p"/decks")}
     else
+      not_found = get_in(socket.assigns, [:flash, "not_found_cards"]) || []
+
       {:ok,
        assign(socket,
          deck: deck,
@@ -19,7 +21,8 @@ defmodule GoodtapWeb.DeckLive do
          editing_qty: nil,
          deck_card_menu: nil,
          adding_to_board: nil,
-         selected_printings: %{}
+         selected_printings: %{},
+         not_found_cards: not_found
        )}
     end
   end
@@ -211,13 +214,18 @@ defmodule GoodtapWeb.DeckLive do
                     >{dc.quantity}x</button>
                   <% end %>
 
-                  <div class="flex-1 relative">
+                  <div class="relative">
                     <span
                       class="text-white cursor-pointer hover:text-purple-300"
                       phx-click="deck_card_menu"
                       phx-value-id={dc.id}
                       phx-value-board={dc.board}
                     >{dc.card_name}</span>
+                    <button
+                      phx-click="remove_card"
+                      phx-value-id={dc.id}
+                      class="text-gray-500 hover:text-red-400 shrink-0 ml-1"
+                    >×</button>
                     <%= if @deck_card_menu && @deck_card_menu.id == dc.id do %>
                       <div class="absolute left-0 top-full mt-1 z-10 bg-gray-800 border border-gray-600 rounded shadow-xl py-1 text-sm min-w-[160px]">
                         <%= if @deck_card_menu.board != "main" do %>
@@ -234,11 +242,6 @@ defmodule GoodtapWeb.DeckLive do
                     <% end %>
                   </div>
 
-                  <button
-                    phx-click="remove_card"
-                    phx-value-id={dc.id}
-                    class="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity ml-auto shrink-0"
-                  >×</button>
                 </div>
               <% end %>
             </div>
@@ -295,6 +298,15 @@ defmodule GoodtapWeb.DeckLive do
           <% end %>
         </div>
       <% end %>
+      <%!-- Not found warning --%>
+      <div :if={@not_found_cards != []} class="mt-4 bg-yellow-900/40 border border-yellow-700 rounded-lg p-4 text-sm text-yellow-300">
+        <p class="font-semibold mb-1">Cards not found during import:</p>
+        <ul class="list-disc list-inside space-y-0.5 text-yellow-400">
+          <%= for name <- @not_found_cards do %>
+            <li>{name}</li>
+          <% end %>
+        </ul>
+      </div>
     </div>
 
     <%!-- Add Card Modal --%>

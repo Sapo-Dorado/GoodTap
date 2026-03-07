@@ -38,10 +38,9 @@ defmodule GoodtapWeb.DeckListLive do
         {:noreply, push_navigate(socket, to: ~p"/decks/#{deck.id}")}
 
       {:ok, deck, not_found} ->
-        missing = Enum.join(not_found, ", ")
         {:noreply,
          socket
-         |> put_flash(:error, "Cards not found: #{missing}")
+         |> put_flash(:not_found_cards, not_found)
          |> push_navigate(to: ~p"/decks/#{deck.id}")}
 
       {:error, reason} ->
