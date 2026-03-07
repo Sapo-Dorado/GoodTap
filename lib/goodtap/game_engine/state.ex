@@ -15,9 +15,14 @@ defmodule Goodtap.GameEngine.State do
     base = %{"host" => host_state, "opponent" => opponent_state}
 
     if Keyword.get(opts, :roll_die, true) do
-      host_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
-      opponent_roll = Enum.sum(Enum.map(1..2, fn _ -> :rand.uniform(6) end))
-      Map.put(base, "die_roll", %{"host" => host_roll, "opponent" => opponent_roll})
+      host_dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
+      opponent_dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
+      Map.put(base, "die_roll", %{
+        "host" => Enum.sum(host_dice),
+        "host_dice" => host_dice,
+        "opponent" => Enum.sum(opponent_dice),
+        "opponent_dice" => opponent_dice
+      })
     else
       base
     end

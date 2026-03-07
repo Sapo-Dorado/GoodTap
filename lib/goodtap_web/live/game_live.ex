@@ -1837,6 +1837,8 @@ defmodule GoodtapWeb.GameLive do
         <% die = @game_state["die_roll"] %>
         <% host_roll = die["host"] || 0 %>
         <% opp_roll = die["opponent"] || 0 %>
+        <% host_dice = die["host_dice"] || [host_roll] %>
+        <% opp_dice = die["opponent_dice"] || [opp_roll] %>
         <% host_name = get_in(@game_state, ["host", "username"]) || "Host" %>
         <% opp_name = get_in(@game_state, ["opponent", "username"]) || "Opponent" %>
         <% winner = cond do
@@ -1844,17 +1846,45 @@ defmodule GoodtapWeb.GameLive do
           opp_roll > host_roll -> opp_name
           true -> nil
         end %>
+        <%!-- Pip positions for each face of a d6, as {cx, cy} pairs --%>
+        <% pip_layouts = %{
+          1 => [{50, 50}],
+          2 => [{25, 25}, {75, 75}],
+          3 => [{25, 25}, {50, 50}, {75, 75}],
+          4 => [{25, 25}, {75, 25}, {25, 75}, {75, 75}],
+          5 => [{25, 25}, {75, 25}, {50, 50}, {25, 75}, {75, 75}],
+          6 => [{25, 22}, {75, 22}, {25, 50}, {75, 50}, {25, 78}, {75, 78}]
+        } %>
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div class="bg-gray-800 rounded-xl p-8 w-full max-w-sm mx-4 text-center shadow-2xl">
-            <h2 class="text-2xl font-bold mb-6">Die Roll</h2>
-            <div class="flex justify-around mb-6">
-              <div class="flex flex-col items-center gap-1">
-                <span class="text-sm text-gray-400">{host_name}</span>
-                <span class="text-5xl font-bold text-white">{host_roll}</span>
+          <div class="bg-gray-800 rounded-xl p-8 w-full max-w-md mx-4 text-center shadow-2xl">
+            <h2 class="text-2xl font-bold mt-2">Die Roll</h2>
+            <div style="height: 1.5rem;"></div>
+            <div class="flex justify-around items-start mb-8">
+              <div class="flex flex-col items-center gap-3 flex-1">
+                <span class="text-base text-gray-300 font-medium">{host_name}</span>
+                <div class="flex">
+                  <%= for d <- host_dice do %>
+                    <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
+                      <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
+                        <circle cx={cx} cy={cy} r="9" fill="white"/>
+                      <% end %>
+                    </svg>
+                  <% end %>
+                </div>
+                <span class="text-lg font-bold text-white">{host_roll}</span>
               </div>
-              <div class="flex flex-col items-center gap-1">
-                <span class="text-sm text-gray-400">{opp_name}</span>
-                <span class="text-5xl font-bold text-white">{opp_roll}</span>
+              <div class="flex flex-col items-center gap-3 flex-1">
+                <span class="text-base text-gray-300 font-medium">{opp_name}</span>
+                <div class="flex">
+                  <%= for d <- opp_dice do %>
+                    <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
+                      <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
+                        <circle cx={cx} cy={cy} r="9" fill="white"/>
+                      <% end %>
+                    </svg>
+                  <% end %>
+                </div>
+                <span class="text-lg font-bold text-white">{opp_roll}</span>
               </div>
             </div>
             <p class="text-lg font-semibold mb-6">
