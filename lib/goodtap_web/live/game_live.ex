@@ -150,7 +150,11 @@ defmodule GoodtapWeb.GameLive do
     actions =
       cond do
         owner && owner != socket.assigns.my_role && zone == "battlefield" ->
-          Hotkeys.valid_actions_for_opponent_battlefield()
+          card = instance_id && get_in(socket.assigns.game_state, [owner, "zones", "battlefield"])
+            |> Kernel.||([])
+            |> Enum.find(&(&1["instance_id"] == instance_id))
+          actions = Hotkeys.valid_actions_for_opponent_battlefield()
+          if card && card["is_face_down"], do: actions -- [:copy_opponent_card], else: actions
         true ->
           Hotkeys.valid_actions_for(zone)
       end

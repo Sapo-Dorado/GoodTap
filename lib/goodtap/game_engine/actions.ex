@@ -261,10 +261,13 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Scry ─────────────────────────────────────────────────────────────────
 
-  # Reveal top N cards (remove from deck top, return them for display)
+  # Reveal top N cards (remove from deck top, return them for display).
+  # When scrying more than 1 card, clear known state on all revealed cards —
+  # the player sees them during scry but can't track individual positions afterward.
   def scry_reveal(state, player, count) do
     deck = get_in(state, [player, "zones", "deck"])
     top_cards = Enum.take(deck, count)
+    top_cards = if count > 1, do: Enum.map(top_cards, &clear_known_to_both/1), else: top_cards
     remaining = Enum.drop(deck, count)
     state = put_in(state, [player, "zones", "deck"], remaining)
     {top_cards, state}
@@ -381,9 +384,8 @@ defmodule Goodtap.GameEngine.Actions do
     opp = if player == "host", do: "opponent", else: "host"
 
     case find_in_zone(state, opp, "battlefield", instance_id) do
-      nil ->
-        {:error, "Card not found on opponent's battlefield"}
-
+      nil -> {:ok, state}
+      %{"is_face_down" => true} -> {:ok, state}
       original ->
         {fx, _} = nudge_if_occupied(state, player, original["x"], original["y"], nil)
         token =
