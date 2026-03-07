@@ -943,11 +943,13 @@ defmodule GoodtapWeb.GameLive do
       |> Enum.filter(&(&1.board == "main"))
       |> Enum.flat_map(&List.duplicate(&1.card_name, &1.quantity))
 
-    commander_entry = Enum.find(deck.deck_cards, &(&1.board == "commander"))
-    commander_name = commander_entry && commander_entry.card_name
+    commander_names =
+      deck.deck_cards
+      |> Enum.filter(&(&1.board == "commander"))
+      |> Enum.flat_map(&List.duplicate(&1.card_name, &1.quantity))
     deck_id = deck.id
 
-    card_spec = {card_names, commander_name, deck_id}
+    card_spec = {card_names, commander_names, deck_id}
 
     {:ok, updated_game} = Games.submit_sideboard_with_card_list(game, my_role, card_spec)
 
@@ -960,8 +962,8 @@ defmodule GoodtapWeb.GameLive do
       opp_spec = card_lists["opponent"]
 
       card_specs = %{
-        "host" => {host_spec["card_names"], host_spec["commander_name"], host_spec["deck_id"]},
-        "opponent" => {opp_spec["card_names"], opp_spec["commander_name"], opp_spec["deck_id"]}
+        "host" => {host_spec["card_names"], host_spec["commander_names"] || [], host_spec["deck_id"]},
+        "opponent" => {opp_spec["card_names"], opp_spec["commander_names"] || [], opp_spec["deck_id"]}
       }
 
       host = updated_game.host
@@ -1000,7 +1002,7 @@ defmodule GoodtapWeb.GameLive do
 
     if card_lists do
       deck_id = card_lists["deck_id"]
-      commander_name = card_lists["commander_name"]
+      commander_names = card_lists["commander_names"] || []
 
       # Build frequency map from the flat card_names list
       main_counts =
@@ -1042,11 +1044,11 @@ defmodule GoodtapWeb.GameLive do
         end)
 
       commander_entries =
-        if commander_name do
-          [%{id: :erlang.phash2({commander_name, "commander"}), card_name: commander_name, board: "commander", quantity: 1}]
-        else
-          []
-        end
+        commander_names
+        |> Enum.frequencies()
+        |> Enum.map(fn {name, qty} ->
+          %{id: :erlang.phash2({name, "commander"}), card_name: name, board: "commander", quantity: qty}
+        end)
 
       %{id: deck_id, deck_cards: commander_entries ++ deck_cards}
     else

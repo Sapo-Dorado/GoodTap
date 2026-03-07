@@ -90,7 +90,7 @@ defmodule Goodtap.Games do
   # Mark a player as ready and store their resolved card list (from in-memory sideboard edits).
   # card_spec is {card_names, commander_name, deck_id}.
   # Reloads from DB first to avoid overwriting the other player's data.
-  def submit_sideboard_with_card_list(game, player_role, {card_names, commander_name, deck_id}) do
+  def submit_sideboard_with_card_list(game, player_role, {card_names, commander_names, deck_id}) do
     fresh = get_game!(game.id)
     state = fresh.game_state || %{}
     ready = Map.get(state, "sideboard_ready", %{})
@@ -101,7 +101,7 @@ defmodule Goodtap.Games do
       |> Map.put("sideboard_ready", Map.put(ready, player_role, true))
       |> Map.put("sideboard_card_lists", Map.put(card_lists, player_role, %{
         "card_names" => card_names,
-        "commander_name" => commander_name,
+        "commander_names" => commander_names,
         "deck_id" => deck_id
       }))
 

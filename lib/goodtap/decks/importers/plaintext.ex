@@ -29,7 +29,7 @@ defmodule Goodtap.Decks.Importers.Plaintext do
   #   4 Lightning Bolt (MH2) 123
   #   4 The Modern Age / Vector Glider (NEO) 66
   # Groups: qty, name, set_code (optional), collector_number (optional)
-  @card_line ~r/^(\d+)[x\s]+([^(]+?)(?:\s+\(([A-Z0-9]+)\)\s+([\w\-]+))?\s*$/
+  @card_line ~r/^(\d+)[x\s]+([^(]+?)(?:\s+\(([A-Z0-9]+)\)\s+([\w\-]+))?\s*(?:\s*\*[FE]\*)?\s*$/
 
   # Arena metadata lines to skip
   @skip_line ~r/^(About|Deck|Name\s|Commander$|Companion$)/i
@@ -64,8 +64,12 @@ defmodule Goodtap.Decks.Importers.Plaintext do
                 else
                   {set_code, collector_number} =
                     case rest do
-                      [set, num | _] when set != "" -> {String.downcase(set), num}
-                      _ -> {nil, nil}
+                      [set, num | _] when set != "" ->
+                        # Strip trailing foil marker from collector number (e.g. "1F" -> "1")
+                        clean_num = String.replace(num, ~r/F$/i, "")
+                        {String.downcase(set), clean_num}
+                      _ ->
+                        {nil, nil}
                     end
 
                   entry = %{

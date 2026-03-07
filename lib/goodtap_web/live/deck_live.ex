@@ -70,6 +70,7 @@ defmodule GoodtapWeb.DeckLive do
   # ─── Deck Card Context Menu ───────────────────────────────────────────────
 
   def handle_event("deck_card_menu", %{"id" => id, "board" => board}, socket) do
+    id = to_string(id)
     menu =
       if socket.assigns.deck_card_menu && socket.assigns.deck_card_menu.id == id do
         nil
@@ -127,6 +128,9 @@ defmodule GoodtapWeb.DeckLive do
 
   defp reload_deck(socket), do: Decks.get_deck_with_cards!(socket.assigns.deck.id)
 
+  defp board_label("commander"), do: "Starts in Play"
+  defp board_label(board), do: String.capitalize(board)
+
   defp group_by_board(deck_cards) do
     deck_cards
     |> Enum.group_by(& &1.board)
@@ -176,11 +180,12 @@ defmodule GoodtapWeb.DeckLive do
       </div>
 
       <%!-- Deck content --%>
+      <div id="deck-card-menu-hook" phx-hook="DeckCardMenu">
       <%= for {board, cards} <- group_by_board(@deck.deck_cards) do %>
         <div class="mb-6">
           <div class="flex items-center justify-between mb-2">
             <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400">
-              {board} ({Enum.sum(Enum.map(cards, & &1.quantity))})
+              {board_label(board)} ({Enum.sum(Enum.map(cards, & &1.quantity))})
             </h3>
             <button phx-click="show_add_card" phx-value-board={board} class="text-xs text-purple-400 hover:text-purple-300">
               + Add card
@@ -216,18 +221,17 @@ defmodule GoodtapWeb.DeckLive do
 
                   <div class="relative">
                     <span
-                      class="text-white cursor-pointer hover:text-purple-300"
-                      phx-click="deck_card_menu"
-                      phx-value-id={dc.id}
-                      phx-value-board={dc.board}
+                      class="text-white cursor-context-menu hover:text-purple-300"
+                      data-deck-card-id={dc.id}
+                      data-deck-card-board={dc.board}
                     >{dc.card_name}</span>
                     <button
                       phx-click="remove_card"
                       phx-value-id={dc.id}
                       class="text-gray-500 hover:text-red-400 shrink-0 ml-1"
                     >×</button>
-                    <%= if @deck_card_menu && @deck_card_menu.id == dc.id do %>
-                      <div class="absolute left-0 top-full mt-1 z-10 bg-gray-800 border border-gray-600 rounded shadow-xl py-1 text-sm min-w-[160px]">
+                    <%= if @deck_card_menu && @deck_card_menu.id == to_string(dc.id) do %>
+                      <div class="absolute left-0 top-full mt-1 z-10 bg-gray-800 border border-gray-600 rounded shadow-xl py-1 text-sm min-w-[160px]" phx-click-away="close_deck_card_menu">
                         <%= if @deck_card_menu.board != "main" do %>
                           <button phx-click="move_card_board" phx-value-id={dc.id} phx-value-board="main" class="w-full text-left px-4 py-2 hover:bg-gray-700">Move to Main Deck</button>
                         <% end %>
@@ -235,7 +239,7 @@ defmodule GoodtapWeb.DeckLive do
                           <button phx-click="move_card_board" phx-value-id={dc.id} phx-value-board="sideboard" class="w-full text-left px-4 py-2 hover:bg-gray-700">Move to Sideboard</button>
                         <% end %>
                         <%= if @deck_card_menu.board != "commander" do %>
-                          <button phx-click="set_commander" phx-value-id={dc.id} class="w-full text-left px-4 py-2 hover:bg-gray-700 text-yellow-400">Set as Commander</button>
+                          <button phx-click="set_commander" phx-value-id={dc.id} class="w-full text-left px-4 py-2 hover:bg-gray-700 text-yellow-400">Set as Starts in Play</button>
                         <% end %>
                         <button phx-click="remove_card" phx-value-id={dc.id} class="w-full text-left px-4 py-2 hover:bg-gray-700 text-red-400">Remove</button>
                       </div>
@@ -251,7 +255,29 @@ defmodule GoodtapWeb.DeckLive do
                 <% img = card_image_url(dc.card_name, dc.printing_id) %>
                 <% card = Catalog.get_card_by_name(dc.card_name) %>
                 <div class="flex flex-col items-center gap-1 relative group w-24">
-                  <img src={img || "/images/CardBack.png"} class="w-full h-auto rounded shadow" title={dc.card_name} />
+                  <div class="relative w-full">
+                    <img
+                      src={img || "/images/CardBack.png"}
+                      class="w-full h-auto rounded shadow cursor-context-menu"
+                      title={dc.card_name}
+                      data-deck-card-id={dc.id}
+                      data-deck-card-board={dc.board}
+                    />
+                    <%= if @deck_card_menu && @deck_card_menu.id == to_string(dc.id) do %>
+                      <div class="absolute left-0 top-full mt-1 z-10 bg-gray-800 border border-gray-600 rounded shadow-xl py-1 text-sm min-w-[160px]" phx-click-away="close_deck_card_menu">
+                        <%= if @deck_card_menu.board != "main" do %>
+                          <button phx-click="move_card_board" phx-value-id={dc.id} phx-value-board="main" class="w-full text-left px-4 py-2 hover:bg-gray-700">Move to Main Deck</button>
+                        <% end %>
+                        <%= if @deck_card_menu.board != "sideboard" do %>
+                          <button phx-click="move_card_board" phx-value-id={dc.id} phx-value-board="sideboard" class="w-full text-left px-4 py-2 hover:bg-gray-700">Move to Sideboard</button>
+                        <% end %>
+                        <%= if @deck_card_menu.board != "commander" do %>
+                          <button phx-click="set_commander" phx-value-id={dc.id} class="w-full text-left px-4 py-2 hover:bg-gray-700 text-yellow-400">Set as Starts in Play</button>
+                        <% end %>
+                        <button phx-click="remove_card" phx-value-id={dc.id} class="w-full text-left px-4 py-2 hover:bg-gray-700 text-red-400">Remove</button>
+                      </div>
+                    <% end %>
+                  </div>
                   <div class="flex items-center gap-1 w-full">
                     <%= if @editing_qty == to_string(dc.id) do %>
                       <form phx-submit="save_qty" class="flex items-center">
@@ -298,6 +324,7 @@ defmodule GoodtapWeb.DeckLive do
           <% end %>
         </div>
       <% end %>
+      </div><%!-- /deck-card-menu-hook --%>
       <%!-- Not found warning --%>
       <div :if={@not_found_cards != []} class="mt-4 bg-yellow-900/40 border border-yellow-700 rounded-lg p-4 text-sm text-yellow-300">
         <p class="font-semibold mb-1">Cards not found during import:</p>

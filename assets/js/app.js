@@ -11,6 +11,7 @@ import CopyToClipboard from "./hooks/copy_to_clipboard"
 import Battlefield from "./hooks/battlefield"
 import CounterButton from "./hooks/counter_button"
 import CardPreview from "./hooks/card_preview"
+import DeckCardMenu from "./hooks/deck_card_menu"
 
 const Hooks = {
   DragDrop,
@@ -18,6 +19,7 @@ const Hooks = {
   Battlefield,
   CounterButton,
   CardPreview,
+  DeckCardMenu,
 }
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

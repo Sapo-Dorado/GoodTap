@@ -42,9 +42,10 @@ defmodule Goodtap.GameEngine.State do
     end
   end
 
-  defp build_player_state_from_names(user, {card_names, commander_name, deck_id}, role) do
-    all_names = if commander_name, do: [commander_name | card_names], else: card_names
-    cards = Catalog.list_cards_by_names(Enum.uniq(all_names))
+  defp build_player_state_from_names(user, {card_names, commander_names, deck_id}, role) do
+    commander_names = List.wrap(commander_names)
+    all_names = Enum.uniq(card_names ++ commander_names)
+    cards = Catalog.list_cards_by_names(all_names)
     card_map = Map.new(cards, &{&1.name, &1})
 
     instances =
@@ -64,18 +65,18 @@ defmodule Goodtap.GameEngine.State do
     hand = Enum.map(hand_raw, &Map.put(&1, "known", %{"host" => role == "host", "opponent" => role == "opponent"}))
 
     battlefield =
-      if commander_name do
-        case Map.fetch(card_map, commander_name) do
+      commander_names
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {name, i} ->
+        case Map.fetch(card_map, name) do
           {:ok, card} ->
-            [build_card_instance(card) |> Map.put("x", 0.5) |> Map.put("y", 0.5)]
+            [build_card_instance(card) |> Map.put("x", 0.3 + i * 0.1) |> Map.put("y", 0.5)]
           :error ->
             require Logger
-            Logger.warning("Commander not found in catalog: #{inspect(commander_name)}")
+            Logger.warning("Starts-in-play card not found in catalog: #{inspect(name)}")
             []
         end
-      else
-        []
-      end
+      end)
 
     %{
       "user_id" => user.id,
@@ -95,10 +96,11 @@ defmodule Goodtap.GameEngine.State do
 
   defp build_player_state(user, deck_id, role) do
     card_names = Decks.expand_deck_card_names(deck_id)
-    commander_entry = Decks.get_commander(deck_id)
+    commander_entries = Decks.get_commanders(deck_id)
+    commander_names = Enum.flat_map(commander_entries, fn dc -> List.duplicate(dc.card_name, dc.quantity) end)
 
-    all_names = if commander_entry, do: [commander_entry.card_name | card_names], else: card_names
-    cards = Catalog.list_cards_by_names(Enum.uniq(all_names))
+    all_names = Enum.uniq(card_names ++ commander_names)
+    cards = Catalog.list_cards_by_names(all_names)
     card_map = Map.new(cards, &{&1.name, &1})
 
     instances =
@@ -117,26 +119,20 @@ defmodule Goodtap.GameEngine.State do
     {hand_raw, deck} = Enum.split(instances, 7)
     hand = Enum.map(hand_raw, &Map.put(&1, "known", %{"host" => role == "host", "opponent" => role == "opponent"}))
 
-    # Place commander on battlefield at a fixed initial position
+    # Place all starts-in-play cards on battlefield
     battlefield =
-      if commander_entry do
-        case Map.fetch(card_map, commander_entry.card_name) do
+      commander_names
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {name, i} ->
+        case Map.fetch(card_map, name) do
           {:ok, card} ->
-            commander_instance =
-              build_card_instance(card)
-              |> Map.put("x", 0.5)
-              |> Map.put("y", 0.5)
-
-            [commander_instance]
-
+            [build_card_instance(card) |> Map.put("x", 0.3 + i * 0.1) |> Map.put("y", 0.5)]
           :error ->
             require Logger
-            Logger.warning("Commander not found in catalog: #{inspect(commander_entry.card_name)}")
+            Logger.warning("Starts-in-play card not found in catalog: #{inspect(name)}")
             []
         end
-      else
-        []
-      end
+      end)
 
     %{
       "user_id" => user.id,

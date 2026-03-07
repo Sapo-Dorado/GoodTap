@@ -221,33 +221,16 @@ defmodule Goodtap.Decks do
     end)
   end
 
-  # Returns the commander card for a deck, or nil
-  def get_commander(deck_id) do
+  # Returns all starts-in-play cards for a deck
+  def get_commanders(deck_id) do
     DeckCard
     |> where([dc], dc.deck_id == ^deck_id and dc.board == "commander")
-    |> limit(1)
-    |> Repo.one()
+    |> Repo.all()
   end
 
-  # Set a card as commander: moves existing commander to main if one exists, then sets this card
+  # Move a card to the starts-in-play board
   def set_commander(deck_id, deck_card_id) do
-    Repo.transact(fn ->
-      # Move existing commander(s) back to main
-      existing_commanders =
-        DeckCard
-        |> where([dc], dc.deck_id == ^deck_id and dc.board == "commander")
-        |> Repo.all()
-
-      Enum.each(existing_commanders, fn dc ->
-        dc |> DeckCard.changeset(%{board: "main"}) |> Repo.update!()
-      end)
-
-      # Set this card as commander
-      deck_card = Repo.get!(DeckCard, deck_card_id)
-
-      deck_card
-      |> DeckCard.changeset(%{board: "commander"})
-      |> Repo.update()
-    end)
+    deck_card = Repo.get!(DeckCard, deck_card_id)
+    move_deck_card_board(deck_card, "commander")
   end
 end
