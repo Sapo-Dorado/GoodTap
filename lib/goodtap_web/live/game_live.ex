@@ -893,11 +893,12 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_event("sideboard_move", %{"id" => id, "to_board" => to_board}, socket) do
     # Move one copy in memory only — never touch the DB
-    id_int = String.to_integer(id)
+    # IDs are compared as strings since they come from the template as strings
+    # and synthetic entries may have non-integer ids like "new_123".
     deck = socket.assigns.sideboard_deck
     cards = deck.deck_cards
 
-    source_card = Enum.find(cards, &(&1.id == id_int))
+    source_card = Enum.find(cards, &(to_string(&1.id) == id))
 
     updated_cards =
       if source_card do
@@ -906,9 +907,9 @@ defmodule GoodtapWeb.GameLive do
         cards
         |> Enum.map(fn dc ->
           cond do
-            dc.id == id_int && dc.quantity > 1 ->
+            to_string(dc.id) == id && dc.quantity > 1 ->
               %{dc | quantity: dc.quantity - 1}
-            dc.id == id_int ->
+            to_string(dc.id) == id ->
               nil  # remove entirely
             dest_card && dc.id == dest_card.id ->
               %{dc | quantity: dc.quantity + 1}
@@ -918,11 +919,10 @@ defmodule GoodtapWeb.GameLive do
         end)
         |> Enum.reject(&is_nil/1)
         |> then(fn cs ->
-          # If no dest card existed, add a new entry
           if dest_card do
             cs
           else
-            cs ++ [%{source_card | id: :"new_#{id_int}", board: to_board, quantity: 1}]
+            cs ++ [%{source_card | id: "new_#{source_card.id}", board: to_board, quantity: 1}]
           end
         end)
       else
