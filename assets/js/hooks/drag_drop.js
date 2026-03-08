@@ -15,8 +15,21 @@ function optimisticallyHideCard(instanceId, zone) {
 // Maps drop-zone name -> ghost card height in px.
 const LIST_ZONES = { hand: 96, deck: 128, graveyard: 128, exile: 128 };
 
+// Local z counter for optimistic z-index on drop. Initialized from the highest
+// z-index already in the DOM so it's always higher than any server-rendered value.
+let localZCounter = 0;
+function nextLocalZ() { return ++localZCounter; }
+function syncZCounter() {
+  const els = document.querySelectorAll("[data-zone='battlefield']");
+  els.forEach(el => {
+    const z = parseInt(el.style.zIndex) || 0;
+    if (z > localZCounter) localZCounter = z;
+  });
+}
+
 const DragDrop = {
   mounted() {
+    syncZCounter();
     this.dragging = null;
     this.ghost = null;
     this.draggedEl = null;
@@ -322,7 +335,8 @@ const DragDrop = {
       dragCommitted = true;
 
       // Hide primary card
-      card.style.display = "none";
+      card.style.opacity = "0";
+      card.style.pointerEvents = "none";
 
       // Primary ghost
       this.ghost = document.createElement("img");
@@ -368,7 +382,8 @@ const DragDrop = {
           ${otherTapped ? "transform: rotate(90deg); transform-origin: center center;" : ""}
         `;
         document.body.appendChild(g);
-        otherEl.style.display = "none";
+        otherEl.style.opacity = "0";
+        otherEl.style.pointerEvents = "none";
         this.extraGhosts.push({ el: otherEl, ghost: g, dxFromPrimary, dyFromPrimary, origXPct, origYPct });
       }
     };
@@ -422,6 +437,8 @@ const DragDrop = {
 
         const insertIndex = isListZone ? (this._insertIndex ?? null) : null;
         this._insertIndex = null;
+        // Set z-index before removing ghost so card is already on top when it reappears
+        card.style.zIndex = nextLocalZ();
         this.cleanupDragGhost();
 
         // ── Optimistic rendering ──────────────────────────────────────────
@@ -442,7 +459,8 @@ const DragDrop = {
           // ── Battlefield reposition (staying on my side) ──
           card.style.left = Math.trunc(relX * 100) + "%";
           card.style.top = Math.trunc(relY * 100) + "%";
-          card.style.display = "";
+          card.style.zIndex = nextLocalZ();
+          card.style.opacity = ""; card.style.pointerEvents = "";
           this.draggedEl = null;
 
           // Reposition other selected cards by the same delta
@@ -457,7 +475,8 @@ const DragDrop = {
               const ny = Math.max(0, Math.min(0.98, oy + dy));
               el.style.left = Math.trunc(nx * 100) + "%";
               el.style.top = Math.trunc(ny * 100) + "%";
-              el.style.display = "";
+              el.style.zIndex = nextLocalZ();
+              el.style.opacity = ""; el.style.pointerEvents = "";
             }
           }
 
@@ -482,7 +501,7 @@ const DragDrop = {
 
             // Siblings without the dragged card
             const siblings = allCards.filter(c => c !== card);
-            card.style.display = "";
+            card.style.opacity = ""; card.style.pointerEvents = "";
             if (adjustedIndex >= siblings.length) {
               innerEl.appendChild(card);
             } else {
@@ -501,6 +520,7 @@ const DragDrop = {
             el.className = "card-on-battlefield absolute cursor-pointer transition-transform";
             el.style.left = Math.trunc(relX * 100) + "%";
             el.style.top = Math.trunc(relY * 100) + "%";
+            el.style.zIndex = nextLocalZ();
             el.setAttribute("data-draggable", "true");
             el.setAttribute("data-instance-id", instanceId);
             el.setAttribute("data-zone", "battlefield");
@@ -562,10 +582,10 @@ const DragDrop = {
         this._insertIndex = null;
         this.cleanupDragGhost();
         if (draggedEl) {
-          draggedEl.style.display = "";
+          draggedEl.style.opacity = ""; draggedEl.style.pointerEvents = "";
         }
         for (const { el } of this.extraGhosts) {
-          el.style.display = "";
+          el.style.opacity = ""; el.style.pointerEvents = "";
         }
       }
       this.extraGhosts = [];
@@ -582,7 +602,7 @@ const DragDrop = {
 
     const cards = Array.from(
       document.querySelectorAll(`[data-draggable][data-zone="battlefield"][data-owner="${this.myRole}"]`)
-    ).filter(el => el.dataset.instanceId !== excludeInstanceId && el.style.display !== "none");
+    ).filter(el => el.dataset.instanceId !== excludeInstanceId && el.style.opacity === "0");
 
     // Use Math.round (not trunc) when reading back stored positions to avoid
     // float round-trip errors (e.g. trunc(0.57 * 100) = 56, not 57).
@@ -832,7 +852,7 @@ const DragDrop = {
   cleanupDrag() {
     this.cleanupDragGhost();
     if (this.draggedEl) {
-      this.draggedEl.style.display = "";
+      this.draggedEl.style.opacity = ""; this.draggedEl.style.pointerEvents = "";
       this.draggedEl = null;
     }
   }

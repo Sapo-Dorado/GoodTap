@@ -1390,7 +1390,7 @@ defmodule GoodtapWeb.GameLive do
             <div
               id={"opp-card-#{card["instance_id"]}"}
               class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "is-tapped", else: "")]}
-              style={"right: #{opp_x}%; bottom: #{opp_y}%; z-index: 1;"}
+              style={"right: #{opp_x}%; bottom: #{opp_y}%; z-index: #{card["z"] || 1};"}
               data-hoverable="true"
               data-instance-id={card["instance_id"]}
               data-zone="battlefield"
@@ -1430,7 +1430,7 @@ defmodule GoodtapWeb.GameLive do
                 if(card["tapped"], do: "is-tapped", else: ""),
                 if(MapSet.member?(@selected_cards, card["instance_id"]), do: "is-selected", else: ""),
               ]}
-              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%; z-index: 1;"}
+              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%; z-index: #{card["z"] || 1};"}
               data-draggable="true"
               data-instance-id={card["instance_id"]}
               data-zone="battlefield"

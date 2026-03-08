@@ -177,11 +177,13 @@ defmodule Goodtap.GameEngine.Actions do
   def move_to_battlefield(state, player, instance_id, source_zone, x, y, nudge \\ true) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       {fx, fy} = if nudge, do: nudge_if_occupied(state, player, x, y, nil), else: {x, y}
+      {state, z} = next_z(state)
       card =
         card
         |> Map.put("tapped", false)
         |> Map.put("x", fx)
         |> Map.put("y", fy)
+        |> Map.put("z", z)
 
       # Face-down cards retain existing known state (player keeps prior knowledge).
       # Face-up cards entering battlefield are visible to all.
@@ -192,8 +194,9 @@ defmodule Goodtap.GameEngine.Actions do
   end
 
   def update_battlefield_position(state, player, instance_id, x, y) do
+    {state, z} = next_z(state)
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
-      card |> Map.put("x", x) |> Map.put("y", y)
+      card |> Map.put("x", x) |> Map.put("y", y) |> Map.put("z", z)
     end)
   end
 
@@ -226,12 +229,14 @@ defmodule Goodtap.GameEngine.Actions do
           case dest do
             "battlefield_face_down" ->
               {fx, fy} = nudge_if_occupied(state, player, 0.5, 0.5, nil)
-              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", true) |> Map.put("x", fx) |> Map.put("y", fy)
+              {state, z} = next_z(state)
+              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", true) |> Map.put("x", fx) |> Map.put("y", fy) |> Map.put("z", z)
               update_in(state, [player, "zones", "battlefield"], &(&1 ++ [card]))
 
             "battlefield" ->
               {fx, fy} = nudge_if_occupied(state, player, 0.5, 0.5, nil)
-              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", false) |> Map.put("x", fx) |> Map.put("y", fy) |> mark_known_to_both()
+              {state, z} = next_z(state)
+              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", false) |> Map.put("x", fx) |> Map.put("y", fy) |> Map.put("z", z) |> mark_known_to_both()
               update_in(state, [player, "zones", "battlefield"], &(&1 ++ [card]))
 
             "graveyard" ->
@@ -455,12 +460,14 @@ defmodule Goodtap.GameEngine.Actions do
 
       original ->
         {fx, _} = nudge_if_occupied(state, player, original["x"], original["y"], nil)
+        {state, z} = next_z(state)
         token =
           original
           |> Map.put("instance_id", Ecto.UUID.generate())
           |> Map.put("is_token", true)
           |> Map.put("x", fx)
           |> Map.put("y", original["y"])
+          |> Map.put("z", z)
 
         {:ok, append_to_zone(state, player, "battlefield", token)}
     end
@@ -475,12 +482,14 @@ defmodule Goodtap.GameEngine.Actions do
       %{"is_face_down" => true} -> {:ok, state}
       original ->
         {fx, _} = nudge_if_occupied(state, player, original["x"], original["y"], nil)
+        {state, z} = next_z(state)
         token =
           original
           |> Map.put("instance_id", Ecto.UUID.generate())
           |> Map.put("is_token", true)
           |> Map.put("x", fx)
           |> Map.put("y", original["y"])
+          |> Map.put("z", z)
 
         {:ok, append_to_zone(state, player, "battlefield", token)}
     end
@@ -490,11 +499,13 @@ defmodule Goodtap.GameEngine.Actions do
 
   def create_token(state, player, card, x, y, printing_id \\ nil) do
     {fx, fy} = nudge_if_occupied(state, player, x, y, nil)
+    {state, z} = next_z(state)
     token =
       card
       |> State.build_token_instance(printing_id)
       |> Map.put("x", fx)
       |> Map.put("y", fy)
+      |> Map.put("z", z)
       |> Map.put("is_token", true)
 
     {:ok, append_to_zone(state, player, "battlefield", token)}
@@ -553,6 +564,11 @@ defmodule Goodtap.GameEngine.Actions do
   # position, or the battlefield boundary (98%) is reached. Uses round() instead of
   # trunc() to avoid float drift (e.g. 57/100*100 = 56.999... -> trunc = 56 != 57).
   # Pass exclude_instance_id to ignore the card being moved.
+  defp next_z(state) do
+    z = (state["z_counter"] || 0) + 1
+    {Map.put(state, "z_counter", z), z}
+  end
+
   defp nudge_if_occupied(state, player, x, y, exclude_instance_id) do
     bf = get_in(state, [player, "zones", "battlefield"]) || []
     occupied =
