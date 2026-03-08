@@ -834,8 +834,7 @@ defmodule GoodtapWeb.GameLive do
     player = socket.assigns.my_role
 
     {top_cards, new_state} = Actions.scry_reveal(state, player, count)
-    logged_state = append_log(new_state, player, "scryed #{count}")
-    socket = persist_and_broadcast(socket, logged_state)
+    socket = persist_and_broadcast(socket, new_state)
 
     {:noreply,
      assign(socket,
@@ -855,7 +854,24 @@ defmodule GoodtapWeb.GameLive do
       player = socket.assigns.my_role
       new_state = Actions.scry_resolve(state, player, new_decisions, scry.cards)
 
-      socket = persist_and_broadcast(socket, new_state)
+      counts = Enum.frequencies(Map.values(new_decisions))
+      top = Map.get(counts, "top", 0)
+      bottom = Map.get(counts, "bottom", 0)
+      parts = Enum.reject(["#{top} on top", "#{bottom} on bottom"], fn s -> String.starts_with?(s, "0") end)
+      log_msg = "scryed #{length(scry.cards)}" <> if(parts == [], do: "", else: " (#{Enum.join(parts, ", ")})")
+
+      # Log individual cards moved to graveyard/exile
+      card_by_id = Map.new(scry.cards, &{&1["instance_id"], &1})
+      logged_state =
+        new_decisions
+        |> Enum.filter(fn {_, dest} -> dest in ["graveyard", "exile"] end)
+        |> Enum.reduce(new_state, fn {id, dest}, st ->
+          name = get_in(card_by_id, [id, "name"]) || "card"
+          append_log(st, player, "#{name} → #{dest}")
+        end)
+        |> append_log(player, log_msg)
+
+      socket = persist_and_broadcast(socket, logged_state)
       {:noreply, assign(socket, scry_session: nil)}
     else
       {:noreply, assign(socket, scry_session: scry)}
@@ -908,10 +924,10 @@ defmodule GoodtapWeb.GameLive do
   # ─── End Game ─────────────────────────────────────────────────────────────
 
   def handle_event("dismiss_die_roll", _params, socket) do
-    # Save dismissal per-player to game_state so it survives reloads.
-    # See mount/3 where this flag is read to decide whether to show the modal.
-    dismissed = Map.get(socket.assigns.game_state, "die_roll_dismissed", %{})
-    new_state = Map.put(socket.assigns.game_state, "die_roll_dismissed", Map.put(dismissed, socket.assigns.my_role, true))
+    state = socket.assigns.game_state
+    player = socket.assigns.my_role
+    dismissed = Map.get(state, "die_roll_dismissed", %{})
+    new_state = Map.put(state, "die_roll_dismissed", Map.put(dismissed, player, true))
     {:ok, _} = Games.update_game_state(socket.assigns.game, new_state)
     {:noreply, assign(socket, die_roll_modal: false, game_state: new_state)}
   end

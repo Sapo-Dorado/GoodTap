@@ -31,12 +31,23 @@ defmodule Goodtap.GameEngine.State do
     if Keyword.get(opts, :roll_die, true) do
       host_dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
       opponent_dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
-      Map.put(base, "die_roll", %{
-        "host" => Enum.sum(host_dice),
+      host_total = Enum.sum(host_dice)
+      opp_total = Enum.sum(opponent_dice)
+      host_name = get_in(base, ["host", "username"]) || "host"
+      opp_name = get_in(base, ["opponent", "username"]) || "opponent"
+      t = System.system_time(:second)
+      log = [
+        %{"t" => t, "p" => "opponent", "u" => opp_name, "m" => "rolled a #{opp_total}"},
+        %{"t" => t, "p" => "host", "u" => host_name, "m" => "rolled a #{host_total}"}
+      ]
+      base
+      |> Map.put("die_roll", %{
+        "host" => host_total,
         "host_dice" => host_dice,
-        "opponent" => Enum.sum(opponent_dice),
+        "opponent" => opp_total,
         "opponent_dice" => opponent_dice
       })
+      |> Map.put("log", log)
     else
       base
     end
