@@ -108,14 +108,15 @@ defmodule GoodtapWeb.GameLive do
      |> put_flash(:info, "New game started!")}
   end
 
-  def handle_info({:token_selected, %{"card_id" => card_id}}, socket) do
+  def handle_info({:token_selected, %{"card_id" => card_id} = params}, socket) do
     card = Catalog.get_card!(card_id)
+    printing_id = params["printing_id"]
     x = socket.assigns.token_place_x
     y = socket.assigns.token_place_y
 
     socket =
       apply_action_inline(socket, fn state, player ->
-        with {:ok, new_state} <- Actions.create_token(state, player, card, x, y) do
+        with {:ok, new_state} <- Actions.create_token(state, player, card, x, y, printing_id) do
           {:ok, append_log(new_state, player, "created #{card.name} token")}
         end
       end)

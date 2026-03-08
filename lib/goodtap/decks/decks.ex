@@ -163,9 +163,9 @@ defmodule Goodtap.Decks do
   def expand_deck_card_names(deck_id) do
     DeckCard
     |> where([dc], dc.deck_id == ^deck_id and dc.board == "main")
-    |> select([dc], {dc.card_name, dc.quantity})
+    |> select([dc], {dc.card_name, dc.quantity, dc.printing_id})
     |> Repo.all()
-    |> Enum.flat_map(fn {name, qty} -> List.duplicate(name, qty) end)
+    |> Enum.flat_map(fn {name, qty, printing_id} -> List.duplicate({name, printing_id}, qty) end)
   end
 
   # Apply a list of sideboard swaps: [{deck_card_id, qty, to_board}]

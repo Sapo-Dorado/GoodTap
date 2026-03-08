@@ -489,10 +489,10 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Create Token ─────────────────────────────────────────────────────────
 
-  def create_token(state, player, card, x, y) do
+  def create_token(state, player, card, x, y, printing_id \\ nil) do
     token =
       card
-      |> State.build_token_instance()
+      |> State.build_token_instance(printing_id)
       |> Map.put("x", x)
       |> Map.put("y", y)
       |> Map.put("is_token", true)

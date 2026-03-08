@@ -106,19 +106,21 @@ defmodule Goodtap.GameEngine.State do
   end
 
   defp build_player_state(user, deck_id, role) do
-    card_names = Decks.expand_deck_card_names(deck_id)
+    deck_entries = Decks.expand_deck_card_names(deck_id)
     commander_entries = Decks.get_commanders(deck_id)
-    commander_names = Enum.flat_map(commander_entries, fn dc -> List.duplicate(dc.card_name, dc.quantity) end)
+    commander_tuples = Enum.flat_map(commander_entries, fn dc ->
+      List.duplicate({dc.card_name, dc.printing_id}, dc.quantity)
+    end)
 
-    all_names = Enum.uniq(card_names ++ commander_names)
+    all_names = Enum.uniq(Enum.map(deck_entries, &elem(&1, 0)) ++ Enum.map(commander_tuples, &elem(&1, 0)))
     cards = Catalog.list_cards_by_names(all_names)
     card_map = Map.new(cards, &{&1.name, &1})
 
     instances =
-      card_names
-      |> Enum.flat_map(fn name ->
+      deck_entries
+      |> Enum.flat_map(fn {name, printing_id} ->
         case Map.fetch(card_map, name) do
-          {:ok, card} -> [build_card_instance(card)]
+          {:ok, card} -> [build_card_instance(card, printing_id)]
           :error ->
             require Logger
             Logger.warning("Card not found in catalog, skipping: #{inspect(name)}")
@@ -132,12 +134,12 @@ defmodule Goodtap.GameEngine.State do
 
     # Place all starts-in-play cards on battlefield
     battlefield =
-      commander_names
+      commander_tuples
       |> Enum.with_index()
-      |> Enum.flat_map(fn {name, i} ->
+      |> Enum.flat_map(fn {{name, printing_id}, i} ->
         case Map.fetch(card_map, name) do
           {:ok, card} ->
-            [build_card_instance(card) |> Map.put("x", 0.3 + i * 0.1) |> Map.put("y", 0.5)]
+            [build_card_instance(card, printing_id) |> Map.put("x", 0.3 + i * 0.1) |> Map.put("y", 0.5)]
           :error ->
             require Logger
             Logger.warning("Starts-in-play card not found in catalog: #{inspect(name)}")
@@ -161,8 +163,9 @@ defmodule Goodtap.GameEngine.State do
     }
   end
 
-  def build_card_instance(card) do
+  def build_card_instance(card, printing_id \\ nil) do
     is_dfc = card.layout in @double_faced_layouts
+    image_uris = printing_image_uris(card, printing_id) || extract_image_uris(card.data)
 
     %{
       "instance_id" => Ecto.UUID.generate(),
@@ -172,18 +175,30 @@ defmodule Goodtap.GameEngine.State do
       "is_face_down" => false,
       "active_face" => 0,
       "is_double_faced" => is_dfc,
-      "image_uris" => extract_image_uris(card.data),
+      "image_uris" => image_uris,
       "counters" => [],
       "tapped" => false,
       "known" => %{"host" => false, "opponent" => false}
     }
   end
 
-  def build_token_instance(card) do
+  def build_token_instance(card, printing_id \\ nil) do
     card
-    |> build_card_instance()
+    |> build_card_instance(printing_id)
     |> Map.put("is_token", true)
     |> Map.put("instance_id", Ecto.UUID.generate())
+  end
+
+  defp printing_image_uris(_card, nil), do: nil
+  defp printing_image_uris(card, printing_id) do
+    case Enum.find(card.printings, &(&1["id"] == printing_id)) do
+      nil -> nil
+      printing ->
+        # Printing stores front image_uris; for DFC, get back from card.data
+        front = get_in(printing, ["image_uris", "normal"])
+        back = get_in(card.data, ["card_faces", Access.at(1), "image_uris", "normal"])
+        %{"front" => front, "back" => back}
+    end
   end
 
   defp extract_image_uris(card_data) do
