@@ -147,6 +147,10 @@ defmodule Goodtap.Games do
     )
   end
 
+  def broadcast_target_card(game_id, instance_id) do
+    Phoenix.PubSub.broadcast(Goodtap.PubSub, "game:#{game_id}", {:target_card, instance_id})
+  end
+
   def broadcast_game_ended(game_id) do
     Phoenix.PubSub.broadcast(Goodtap.PubSub, "game:#{game_id}", :game_ended)
   end

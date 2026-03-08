@@ -31,7 +31,7 @@ defmodule GoodtapWeb.Hotkeys do
   end
 
   def valid_actions_for("battlefield") do
-    [:tap, :move_to_graveyard, :move_to_exile, :move_to_deck_top, :move_to_deck_bottom, :flip_card, :add_counter, :copy_card]
+    [:tap, :move_to_graveyard, :move_to_exile, :move_to_deck_top, :move_to_deck_bottom, :flip_card, :add_counter, :copy_card, :target_card]
   end
 
   def valid_actions_for_opponent_battlefield do

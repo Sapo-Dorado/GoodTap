@@ -137,6 +137,10 @@ defmodule GoodtapWeb.GameLive do
     end
   end
 
+  def handle_info({:target_card, instance_id}, socket) do
+    {:noreply, push_event(socket, "target_card", %{instance_id: instance_id})}
+  end
+
   def handle_info(_, socket), do: {:noreply, socket}
 
   # ─── Context Menu ─────────────────────────────────────────────────────────
@@ -343,7 +347,8 @@ defmodule GoodtapWeb.GameLive do
             end
 
           key == "e" and not is_nil(id) and action_allowed?.(:target_card) ->
-            {:noreply, push_event(socket, "target_card", %{instance_id: id})}
+            Games.broadcast_target_card(socket.assigns.game.id, id)
+            {:noreply, socket}
 
           key == "w" ->
             {:noreply, assign(socket, token_search: true)}
@@ -461,7 +466,8 @@ defmodule GoodtapWeb.GameLive do
   end
 
   def handle_event("action", %{"type" => "target_card", "instance_id" => id}, socket) do
-    {:noreply, socket |> assign(context_menu: nil) |> push_event("target_card", %{instance_id: id})}
+    Games.broadcast_target_card(socket.assigns.game.id, id)
+    {:noreply, assign(socket, context_menu: nil)}
   end
 
   def handle_event("action", %{"type" => "draw_face_down"}, socket) do
