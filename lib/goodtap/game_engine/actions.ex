@@ -203,6 +203,40 @@ defmodule Goodtap.GameEngine.Actions do
     end)
   end
 
+  # ─── Draw Top Card to Destination ─────────────────────────────────────────
+
+  # dest: "battlefield" | "battlefield_face_down" | "graveyard" | "exile"
+  def draw_top_to(state, player, dest) do
+    case get_in(state, [player, "zones", "deck"]) do
+      [] -> {:ok, state}
+      [card | rest] ->
+        state = put_in(state, [player, "zones", "deck"], rest)
+
+        state =
+          case dest do
+            "battlefield_face_down" ->
+              {fx, fy} = nudge_if_occupied(state, player, 0.5, 0.5, nil)
+              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", true) |> Map.put("x", fx) |> Map.put("y", fy)
+              update_in(state, [player, "zones", "battlefield"], &(&1 ++ [card]))
+
+            "battlefield" ->
+              {fx, fy} = nudge_if_occupied(state, player, 0.5, 0.5, nil)
+              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", false) |> Map.put("x", fx) |> Map.put("y", fy) |> mark_known_to_both()
+              update_in(state, [player, "zones", "battlefield"], &(&1 ++ [card]))
+
+            "graveyard" ->
+              card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
+              if card["is_token"], do: state, else: prepend_to_zone(state, player, "graveyard", card)
+
+            "exile" ->
+              card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
+              if card["is_token"], do: state, else: prepend_to_zone(state, player, "exile", card)
+          end
+
+        {:ok, maybe_reveal_deck_top(state, player)}
+    end
+  end
+
   # ─── Draw Face-Down to Battlefield ────────────────────────────────────────
 
   def draw_face_down(state, player, x \\ 0.5, y \\ 0.5) do

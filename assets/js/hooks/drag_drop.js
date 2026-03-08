@@ -1,6 +1,16 @@
 const CARD_W = 56;
 const CARD_H = 78;
 
+// Hide a card element immediately (before server confirms the move).
+// LiveView will remove it from the DOM when the new state arrives.
+function optimisticallyHideCard(instanceId, zone) {
+  const el =
+    document.getElementById(`card-${instanceId}`) ||
+    document.getElementById(`hand-card-${instanceId}`) ||
+    document.querySelector(`[data-instance-id="${instanceId}"]`);
+  if (el) el.style.visibility = "hidden";
+}
+
 // Zones that show an insert-ghost indicator and support index-based reordering.
 // Maps drop-zone name -> ghost card height in px.
 const LIST_ZONES = { hand: 96, deck: 128, graveyard: 128, exile: 128 };
@@ -91,6 +101,9 @@ const DragDrop = {
       }
     };
 
+    // Keys that move a card out of its zone — we hide it optimistically
+    const MOVE_KEYS = new Set(["d", "s", "t", "y"]);
+
     const onKeydown = (e) => {
       // Don't fire hotkeys when typing in inputs
       const tag = document.activeElement && document.activeElement.tagName;
@@ -104,6 +117,11 @@ const DragDrop = {
       const key = e.key === " " ? "space" : e.key.toLowerCase();
       if (key === "space") e.preventDefault();
       const hovered = this.hoveredCard;
+
+      // Optimistically hide the card before the server round-trip
+      if (hovered && MOVE_KEYS.has(key) && hovered.owner === this.myRole) {
+        optimisticallyHideCard(hovered.instanceId, hovered.zone);
+      }
 
       this.pushEvent("hotkey", {
         key,

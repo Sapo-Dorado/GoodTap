@@ -100,9 +100,58 @@ const Battlefield = {
       showTargetReticle(instance_id);
     });
 
+    // After every LiveView patch, clamp the context menu to the viewport.
+    // Uses rAF so layout is complete before measuring.
+    // Also flips any submenus that would go off the right edge.
+    this._menuObserver = new MutationObserver(() => {
+      requestAnimationFrame(() => {
+        const menu = document.getElementById("context-menu");
+        if (!menu) return;
+        const rect = menu.getBoundingClientRect();
+        const pad = 8;
+        if (rect.right > window.innerWidth - pad) {
+          menu.style.left = Math.max(0, window.innerWidth - rect.width - pad) + "px";
+        }
+        if (rect.top < pad) {
+          menu.style.bottom = Math.max(0, window.innerHeight - rect.height - pad) + "px";
+        }
+
+        // Wire up submenu show/hide with gap-crossing delay
+        menu.querySelectorAll(".submenu-panel").forEach(sub => {
+          const row = sub.parentElement;
+          if (!row || row._submenuBound) return;
+          row._submenuBound = true;
+          let hideTimer = null;
+
+          const show = () => {
+            clearTimeout(hideTimer);
+            sub.style.display = "block";
+            // Flip to left if it overflows the right edge
+            sub.style.left = "";
+            sub.style.right = "";
+            const subRect = sub.getBoundingClientRect();
+            if (subRect.right > window.innerWidth - pad) {
+              sub.style.left = "auto";
+              sub.style.right = "100%";
+            }
+          };
+          const hide = () => {
+            hideTimer = setTimeout(() => { sub.style.display = "none"; }, 100);
+          };
+
+          row.addEventListener("mouseenter", show);
+          row.addEventListener("mouseleave", hide);
+          sub.addEventListener("mouseenter", () => clearTimeout(hideTimer));
+          sub.addEventListener("mouseleave", hide);
+        });
+      });
+    });
+    this._menuObserver.observe(document.body, { childList: true, subtree: true });
+
     this._cleanup = () => {
       document.removeEventListener("contextmenu", onContextmenu);
       this.el.removeEventListener("contextmenu", onContextmenuBattlefield);
+      this._menuObserver.disconnect();
     };
   },
 
