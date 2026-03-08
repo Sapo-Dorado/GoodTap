@@ -46,9 +46,7 @@ defmodule GoodtapWeb.Hotkeys do
     [:draw, :shuffle, :scry, :draw_top_to, :toggle_top_revealed]
   end
 
-  def valid_actions_for("graveyard") do
-    [:move_to_exile, :move_to_hand, :move_to_deck_top, :move_to_deck_bottom]
-  end
+  def valid_actions_for("graveyard"), do: [:move_to_exile, :move_to_hand, :move_to_deck_top, :move_to_deck_bottom, :move_all_to_exile]
 
   def valid_actions_for("exile") do
     [:move_to_graveyard, :move_to_hand, :move_to_deck_top, :move_to_deck_bottom]
@@ -57,6 +55,7 @@ defmodule GoodtapWeb.Hotkeys do
   def valid_actions_for(_), do: []
 
   def action_label(:tap), do: "Tap / Untap"
+  def action_label(:move_all_to_exile), do: "Move All to Exile"
   def action_label(:move_to_graveyard), do: "Move to Graveyard"
   def action_label(:move_to_exile), do: "Move to Exile"
   def action_label(:move_to_hand), do: "Move to Hand"

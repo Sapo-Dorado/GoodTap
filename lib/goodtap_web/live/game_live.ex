@@ -491,6 +491,14 @@ defmodule GoodtapWeb.GameLive do
     {:noreply, assign(socket, open_zone: {player, "deck", %{find: true, query: ""}}, context_menu: nil)}
   end
 
+  def handle_event("action", %{"type" => "move_all_to_exile"}, socket) do
+    apply_action(socket, fn state, player ->
+      with {:ok, new_state} <- Actions.move_all_to_exile(state, player) do
+        {:ok, append_log(new_state, player, "moved graveyard to exile")}
+      end
+    end)
+  end
+
   def handle_event("action", %{"type" => "shuffle"}, socket) do
     apply_action(socket, fn state, player ->
       with {:ok, new_state} <- Actions.shuffle(state, player) do

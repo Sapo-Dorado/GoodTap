@@ -81,6 +81,17 @@ defmodule Goodtap.GameEngine.Actions do
     end
   end
 
+  def move_all_to_exile(state, player) do
+    graveyard = get_in(state, [player, "zones", "graveyard"]) || []
+    existing_exile = get_in(state, [player, "zones", "exile"]) || []
+    {to_exile, _tokens} = Enum.split_with(graveyard, &(!&1["is_token"]))
+    to_exile = Enum.map(to_exile, &(&1 |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()))
+    state
+    |> put_in([player, "zones", "graveyard"], [])
+    |> put_in([player, "zones", "exile"], to_exile ++ existing_exile)
+    |> then(&{:ok, &1})
+  end
+
   # ─── Reorder Within Zone ──────────────────────────────────────────────────
 
   # Generic reorder for any list zone (hand, deck, graveyard, exile).
