@@ -1375,8 +1375,8 @@ defmodule GoodtapWeb.GameLive do
           <%!-- Log toggle — left edge, vertically centered in my (bottom) half --%>
           <button
             phx-click="toggle_log"
-            class={["absolute left-2 z-10 flex flex-col gap-1 p-1.5 rounded hover:bg-gray-700/60 transition-colors", if(@log_open, do: "text-blue-400", else: "text-gray-500 hover:text-gray-300")]}
-            style="top: 75%; transform: translateY(-50%);"
+            class={["absolute left-2 flex flex-col gap-1 p-1.5 rounded hover:bg-gray-700/60 transition-colors", if(@log_open, do: "text-blue-400", else: "text-gray-500 hover:text-gray-300")]}
+            style="bottom: 140px; z-index: 30;"
             title="Game Log"
             data-no-hotkey
           >
