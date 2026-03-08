@@ -98,6 +98,23 @@ defmodule Goodtap.Accounts do
     :ok
   end
 
+  @doc """
+  Prepends a token entry to the user's recent_tokens list, keeping only the 5 most recent.
+  Deduplicates by name + oracle_text so distinct same-named tokens (e.g. Samurai variants) are tracked separately.
+  """
+  def add_recent_token(user, card) do
+    oracle_text = get_in(card.data, ["oracle_text"]) || ""
+    entry = %{"name" => card.name, "oracle_text" => oracle_text}
+
+    updated =
+      [entry | Enum.reject(user.recent_tokens, &(&1["name"] == entry["name"] && &1["oracle_text"] == entry["oracle_text"]))]
+      |> Enum.take(8)
+
+    user
+    |> Ecto.Changeset.change(recent_tokens: updated)
+    |> Repo.update!()
+  end
+
   ## Token helper
 
   defp update_user_and_delete_all_tokens(changeset) do

@@ -1,7 +1,7 @@
 defmodule GoodtapWeb.GameLive do
   use GoodtapWeb, :live_view
 
-  alias Goodtap.{Games, Catalog, Decks}
+  alias Goodtap.{Games, Catalog, Decks, Accounts}
   alias Goodtap.GameEngine.{Actions, State}
   alias GoodtapWeb.Hotkeys
 
@@ -56,6 +56,7 @@ defmodule GoodtapWeb.GameLive do
          token_place_x: 0.1,
          token_place_y: 0.5,
          token_filter: :tokens_only,
+         recent_tokens: user.recent_tokens,
          # Add counter
          adding_counter_to: nil,
          counter_name_input: "",
@@ -121,7 +122,11 @@ defmodule GoodtapWeb.GameLive do
         end
       end)
 
-    {:noreply, assign(socket, token_search: nil)}
+    user = socket.assigns.current_scope.user
+    updated_user = Accounts.add_recent_token(user, card)
+    updated_scope = %{socket.assigns.current_scope | user: updated_user}
+
+    {:noreply, assign(socket, token_search: nil, recent_tokens: updated_user.recent_tokens, current_scope: updated_scope)}
   end
 
   def handle_info({:flush_log, key}, socket) do
@@ -2082,6 +2087,7 @@ defmodule GoodtapWeb.GameLive do
             filter={@token_filter}
             show_filter_toggle={false}
             on_select={:token_selected}
+            recent_card_names={@recent_tokens}
           />
         </div>
       </div>

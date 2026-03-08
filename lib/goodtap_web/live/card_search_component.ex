@@ -31,13 +31,17 @@ defmodule GoodtapWeb.CardSearchComponent do
        total: 0,
        filter: :all,
        show_filter_toggle: false,
-       selected_printings: %{}
+       selected_printings: %{},
+       recent_card_names: [],
+       recent_cards: []
      )}
   end
 
   def update(assigns, socket) do
     new_filter = Map.get(assigns, :filter, :all)
     old_filter = socket.assigns[:filter]
+    new_recent_names = Map.get(assigns, :recent_card_names, [])
+    old_recent_names = socket.assigns[:recent_card_names]
 
     socket =
       socket
@@ -50,6 +54,15 @@ defmodule GoodtapWeb.CardSearchComponent do
       if old_filter != nil && old_filter != new_filter && socket.assigns.query != "" do
         {results, total} = Catalog.search_cards_paged(socket.assigns.query, limit: @default_limit, filter: new_filter)
         assign(socket, results: results, total: total)
+      else
+        socket
+      end
+
+    # Always reload recent cards when the list changes
+    socket =
+      if new_recent_names != old_recent_names do
+        recent_cards = Catalog.get_cards_by_recent_tokens(new_recent_names)
+        assign(socket, recent_card_names: new_recent_names, recent_cards: recent_cards)
       else
         socket
       end
@@ -152,6 +165,46 @@ defmodule GoodtapWeb.CardSearchComponent do
           phx-target={@myself}
           class={["px-2 py-1 rounded", if(@filter == :no_tokens, do: "bg-purple-600 text-white", else: "bg-gray-700 text-gray-300 hover:bg-gray-600")]}
         >No tokens</button>
+      </div>
+
+      <%!-- Recent cards (shown when query is empty) --%>
+      <div :if={@query == "" && @recent_cards != []} class="mb-1">
+        <p class="text-xs text-gray-500 mb-2">Recent</p>
+        <div class="flex flex-wrap gap-3 py-1" id={"card-search-recent-#{@myself.cid}"} phx-hook="CardPreview">
+          <%= for card <- @recent_cards do %>
+            <% img = card_image(card, @selected_printings) %>
+            <div class="flex flex-col items-center gap-1 w-24">
+              <button
+                phx-click="select_card"
+                phx-value-card_id={card.id}
+                phx-value-card_name={card.name}
+                phx-target={@myself}
+                class="rounded hover:ring-2 hover:ring-purple-400 transition-all"
+                title={card.name}
+              >
+                <img src={img} class="h-28 w-auto rounded shadow" draggable="false" data-card-img={img} />
+              </button>
+              <span class="text-xs text-gray-300 w-full truncate text-center">{card.name}</span>
+              <form
+                :if={length(card.printings) > 1}
+                phx-change="select_printing"
+                phx-target={@myself}
+              >
+                <input type="hidden" name="card_id" value={card.id} />
+                <select class="select select-xs bg-gray-700 w-full text-xs" name="printing_id">
+                  <%= for p <- card.printings do %>
+                    <option
+                      value={p["id"]}
+                      selected={Map.get(@selected_printings, to_string(card.id)) == p["id"]}
+                    >
+                      {String.upcase(p["set_code"])} #{p["collector_number"]}
+                    </option>
+                  <% end %>
+                </select>
+              </form>
+            </div>
+          <% end %>
+        </div>
       </div>
 
       <%!-- Results grid --%>

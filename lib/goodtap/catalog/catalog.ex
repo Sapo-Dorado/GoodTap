@@ -66,6 +66,27 @@ defmodule Goodtap.Catalog do
     |> Repo.all()
   end
 
+  # Fetch cards matching recent token entries (list of %{"name" => _, "oracle_text" => _} maps).
+  # Preserves the order of the input list and matches on both name and oracle_text.
+  def get_cards_by_recent_tokens(entries) when is_list(entries) do
+    names = Enum.map(entries, & &1["name"]) |> Enum.uniq()
+
+    cards =
+      Card
+      |> where([c], c.name in ^names)
+      |> Repo.all()
+
+    Enum.reduce(entries, [], fn entry, acc ->
+      match =
+        Enum.find(cards, fn c ->
+          c.name == entry["name"] &&
+            (get_in(c.data, ["oracle_text"]) || "") == entry["oracle_text"]
+        end)
+
+      if match, do: acc ++ [match], else: acc
+    end)
+  end
+
   # Find a specific printing by its Scryfall ID within a card's printings array
   def get_printing(card_name, printing_id) when is_binary(card_name) and is_binary(printing_id) do
     case get_card_by_name(card_name) do
