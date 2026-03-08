@@ -174,9 +174,9 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Move to Battlefield ──────────────────────────────────────────────────
 
-  def move_to_battlefield(state, player, instance_id, source_zone, x, y) do
+  def move_to_battlefield(state, player, instance_id, source_zone, x, y, nudge \\ true) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      {fx, fy} = nudge_if_occupied(state, player, x, y, nil)
+      {fx, fy} = if nudge, do: nudge_if_occupied(state, player, x, y, nil), else: {x, y}
       card =
         card
         |> Map.put("tapped", false)
@@ -192,9 +192,8 @@ defmodule Goodtap.GameEngine.Actions do
   end
 
   def update_battlefield_position(state, player, instance_id, x, y) do
-    {fx, fy} = nudge_if_occupied(state, player, x, y, instance_id)
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
-      card |> Map.put("x", fx) |> Map.put("y", fy)
+      card |> Map.put("x", x) |> Map.put("y", y)
     end)
   end
 
@@ -490,11 +489,12 @@ defmodule Goodtap.GameEngine.Actions do
   # ─── Create Token ─────────────────────────────────────────────────────────
 
   def create_token(state, player, card, x, y, printing_id \\ nil) do
+    {fx, fy} = nudge_if_occupied(state, player, x, y, nil)
     token =
       card
       |> State.build_token_instance(printing_id)
-      |> Map.put("x", x)
-      |> Map.put("y", y)
+      |> Map.put("x", fx)
+      |> Map.put("y", fy)
       |> Map.put("is_token", true)
 
     {:ok, append_to_zone(state, player, "battlefield", token)}

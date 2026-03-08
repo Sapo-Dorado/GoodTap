@@ -440,7 +440,6 @@ const DragDrop = {
 
         if (isBattlefield && zone === "battlefield") {
           // ── Battlefield reposition (staying on my side) ──
-          ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
           card.style.left = Math.trunc(relX * 100) + "%";
           card.style.top = Math.trunc(relY * 100) + "%";
           card.style.display = "";
@@ -497,7 +496,6 @@ const DragDrop = {
           // ── Cross-zone → my battlefield ──
           const bf = document.getElementById("battlefield");
           if (bf) {
-            ({ relX, relY } = this.nudgeIfOccupied(relX, relY, instanceId));
             const el = document.createElement("div");
             el.id = `card-${instanceId}`;
             el.className = "card-on-battlefield absolute cursor-pointer transition-transform";

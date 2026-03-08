@@ -761,7 +761,7 @@ defmodule GoodtapWeb.GameLive do
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
-                Actions.move_to_battlefield(st, player, sid, src, x, y)
+                Actions.move_to_battlefield(st, player, sid, src, x, y, false)
               end) |> elem(1) |> then(&{:ok, &1})
               names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → battlefield")}
