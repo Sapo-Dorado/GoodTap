@@ -1438,18 +1438,17 @@ defmodule GoodtapWeb.GameLive do
               data-selected={if MapSet.member?(@selected_cards, card["instance_id"]), do: "true", else: "false"}
               data-is-token={if card["is_token"], do: "true", else: "false"}
             >
-              <div class="flex flex-col items-center">
-                <%!-- Card image with hover highlight --%>
-                <div class="card-draggable">
-                  <img
-                    src={card_display_url(card, @my_role, @my_role, "battlefield")}
-                    class="card-image rounded shadow-lg"
-                    draggable="false"
-                  />
-                </div>
+              <%!-- Card image with hover highlight --%>
+              <div class="card-draggable">
+                <img
+                  src={card_display_url(card, @my_role, @my_role, "battlefield")}
+                  class="card-image rounded shadow-lg"
+                  draggable="false"
+                />
+              </div>
 
-                <%!-- Counters display — vertical stack below card, centered --%>
-                <div :if={(card["counters"] || []) != []} class="flex flex-col gap-0.5 mt-0.5 items-center" data-no-hotkey>
+              <%!-- Counters: absolutely positioned below card, not affecting card dimensions --%>
+              <div :if={(card["counters"] || []) != []} class="absolute left-0 right-0 flex flex-col gap-0.5 items-center" style="top: 100%; margin-top: 2px;" data-no-hotkey>
                   <%= for {counter, cidx} <- Enum.with_index(card["counters"] || []) do %>
                     <div class="relative group/counter">
                       <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight">
@@ -1483,7 +1482,6 @@ defmodule GoodtapWeb.GameLive do
                     </div>
                   <% end %>
                 </div>
-              </div>
             </div>
           <% end %>
 

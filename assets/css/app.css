@@ -136,13 +136,15 @@
   position: relative;
 }
 
-/* transform-origin: top left so left/top % positions map to card top-left corner */
 .card-on-battlefield {
-  transform-origin: center center;
+  position: relative;
+  width: 56px;
+  height: 78px;
 }
 
 .card-draggable {
-  transition: box-shadow 0.1s ease;
+  transition: box-shadow 0.1s ease, transform 0.1s ease;
+  transform-origin: center center;
 }
 
 .card-draggable:hover {
@@ -150,10 +152,9 @@
   border-radius: 4px;
 }
 
-/* Tapped rotation - rotate 90° keeping the card center in place */
-.card-on-battlefield.is-tapped {
+/* Tapped rotation — only the card image rotates, not the counters */
+.card-on-battlefield.is-tapped .card-draggable {
   transform: rotate(90deg);
-  transform-origin: center center;
 }
 
 /* Selected card highlight — blue ring around the card image */
