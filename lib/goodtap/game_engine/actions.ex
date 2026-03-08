@@ -564,9 +564,38 @@ defmodule Goodtap.GameEngine.Actions do
   # position, or the battlefield boundary (98%) is reached. Uses round() instead of
   # trunc() to avoid float drift (e.g. 57/100*100 = 56.999... -> trunc = 56 != 57).
   # Pass exclude_instance_id to ignore the card being moved.
+  @max_card_z 15
+
   defp next_z(state) do
-    z = (state["z_counter"] || 0) + 1
-    {Map.put(state, "z_counter", z), z}
+    next = (state["z_counter"] || 0) + 1
+
+    if next > @max_card_z do
+      # Renumber all battlefield cards across both players by their current z order,
+      # then assign the next available z value.
+      all_cards =
+        ["host", "opponent"]
+        |> Enum.flat_map(fn role ->
+          (get_in(state, [role, "zones", "battlefield"]) || [])
+          |> Enum.map(&{role, &1})
+        end)
+        |> Enum.sort_by(fn {_role, c} -> c["z"] || 0 end)
+
+      {state, _} =
+        Enum.reduce(all_cards, {state, 1}, fn {role, card}, {st, i} ->
+          updated =
+            (get_in(st, [role, "zones", "battlefield"]) || [])
+            |> Enum.map(fn c ->
+              if c["instance_id"] == card["instance_id"], do: Map.put(c, "z", i), else: c
+            end)
+
+          {put_in(st, [role, "zones", "battlefield"], updated), i + 1}
+        end)
+
+      z = length(all_cards) + 1
+      {Map.put(state, "z_counter", z), z}
+    else
+      {Map.put(state, "z_counter", next), next}
+    end
   end
 
   defp nudge_if_occupied(state, player, x, y, exclude_instance_id) do

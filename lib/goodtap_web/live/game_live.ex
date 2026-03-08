@@ -123,7 +123,7 @@ defmodule GoodtapWeb.GameLive do
       end)
 
     user = socket.assigns.current_scope.user
-    updated_user = Accounts.add_recent_token(user, card)
+    updated_user = Accounts.add_recent_token(user, card, printing_id)
     updated_scope = %{socket.assigns.current_scope | user: updated_user}
 
     {:noreply, assign(socket, token_search: nil, recent_tokens: updated_user.recent_tokens, current_scope: updated_scope)}

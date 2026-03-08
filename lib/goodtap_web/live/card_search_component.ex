@@ -62,7 +62,21 @@ defmodule GoodtapWeb.CardSearchComponent do
     socket =
       if new_recent_names != old_recent_names do
         recent_cards = Catalog.get_cards_by_recent_tokens(new_recent_names)
-        assign(socket, recent_card_names: new_recent_names, recent_cards: recent_cards)
+        # Pre-select the last-used printing for each recent card
+        recent_printings =
+          Enum.reduce(new_recent_names, %{}, fn entry, acc ->
+            if entry["printing_id"] do
+              card = Enum.find(recent_cards, &(&1.name == entry["name"]))
+              if card, do: Map.put(acc, to_string(card.id), entry["printing_id"]), else: acc
+            else
+              acc
+            end
+          end)
+        assign(socket,
+          recent_card_names: new_recent_names,
+          recent_cards: recent_cards,
+          selected_printings: Map.merge(socket.assigns.selected_printings, recent_printings)
+        )
       else
         socket
       end

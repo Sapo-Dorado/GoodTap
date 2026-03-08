@@ -15,10 +15,20 @@ function optimisticallyHideCard(instanceId, zone) {
 // Maps drop-zone name -> ghost card height in px.
 const LIST_ZONES = { hand: 96, deck: 128, graveyard: 128, exile: 128 };
 
-// Local z counter for optimistic z-index on drop. Initialized from the highest
-// z-index already in the DOM so it's always higher than any server-rendered value.
+// Local z counter for optimistic z-index on drop. Capped at MAX_CARD_Z to stay
+// below pile/menu z-indexes. Resets by renumbering DOM cards when cap is hit.
+const MAX_CARD_Z = 15;
 let localZCounter = 0;
-function nextLocalZ() { return ++localZCounter; }
+function nextLocalZ() {
+  if (localZCounter >= MAX_CARD_Z) {
+    // Renumber all battlefield cards by current z order, reset counter
+    const els = Array.from(document.querySelectorAll("[data-zone='battlefield']"));
+    els.sort((a, b) => (parseInt(a.style.zIndex) || 0) - (parseInt(b.style.zIndex) || 0));
+    els.forEach((el, i) => { el.style.zIndex = i + 1; });
+    localZCounter = els.length;
+  }
+  return ++localZCounter;
+}
 function syncZCounter() {
   const els = document.querySelectorAll("[data-zone='battlefield']");
   els.forEach(el => {
