@@ -206,7 +206,7 @@ defmodule GoodtapWeb.CardSearchComponent do
               >
                 <input type="hidden" name="card_id" value={card.id} />
                 <select class="select select-xs bg-gray-700 w-full text-xs" name="printing_id">
-                  <%= for p <- card.printings do %>
+                  <%= for p <- Enum.sort_by(card.printings, & &1["released_at"], :desc) do %>
                     <option
                       value={p["id"]}
                       selected={Map.get(@selected_printings, to_string(card.id)) == p["id"]}
@@ -245,7 +245,7 @@ defmodule GoodtapWeb.CardSearchComponent do
             >
               <input type="hidden" name="card_id" value={card.id} />
               <select class="select select-xs bg-gray-700 w-full text-xs" name="printing_id">
-                <%= for p <- card.printings do %>
+                <%= for p <- Enum.sort_by(card.printings, & &1["released_at"], :desc) do %>
                   <option
                     value={p["id"]}
                     selected={Map.get(@selected_printings, to_string(card.id)) == p["id"]}

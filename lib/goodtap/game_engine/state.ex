@@ -165,7 +165,8 @@ defmodule Goodtap.GameEngine.State do
 
   def build_card_instance(card, printing_id \\ nil) do
     is_dfc = card.layout in @double_faced_layouts
-    image_uris = printing_image_uris(card, printing_id) || extract_image_uris(card.data)
+    resolved_printing_id = printing_id || card.default_printing_id
+    image_uris = printing_image_uris(card, resolved_printing_id) || extract_image_uris(card.data)
 
     %{
       "instance_id" => Ecto.UUID.generate(),

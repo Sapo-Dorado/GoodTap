@@ -118,8 +118,9 @@ defmodule Goodtap.Catalog do
   # Printing resolution:
   #   If set_code + collector_number are provided (e.g. from "(RNA) 244" in the
   #   decklist), we look for a matching printing in card.printings. If found we store
-  #   that printing_id on the deck_card so the correct art is shown. Falls back to nil
-  #   (default art) if the printing isn't in our DB.
+  #   that printing_id on the deck_card so the correct art is shown. Falls back to
+  #   card.default_printing_id (most recent is_default printing from seeds) if no
+  #   specific printing is found — this freezes the printing reference at import time.
   #
   # Returns {card, printing_id} — printing_id may be nil.
   @doc """
@@ -183,7 +184,8 @@ defmodule Goodtap.Catalog do
                 end)
                 printing && printing["id"]
               end
-            {card, printing_id}
+            # Fall back to default_printing_id so deck_cards always have a frozen printing reference
+            {card, printing_id || card.default_printing_id}
         end
 
       Map.put(acc, raw_name, result)
@@ -214,7 +216,7 @@ defmodule Goodtap.Catalog do
         {nil, nil}
 
       card ->
-        # Step 4: resolve printing from set+collector if provided
+        # Resolve printing from set+collector if provided, else use default_printing_id
         printing_id =
           if set_code && collector_number do
             printing = Enum.find(card.printings, fn p ->
@@ -223,7 +225,7 @@ defmodule Goodtap.Catalog do
             printing && printing["id"]
           end
 
-        {card, printing_id}
+        {card, printing_id || card.default_printing_id}
     end
   end
 end

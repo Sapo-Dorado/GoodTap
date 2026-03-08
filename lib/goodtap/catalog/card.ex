@@ -11,6 +11,7 @@ defmodule Goodtap.Catalog.Card do
     field :is_token, :boolean, default: false
     field :data, :map
     field :printings, {:array, :map}, default: []
+    field :default_printing_id, :string
     timestamps()
   end
 

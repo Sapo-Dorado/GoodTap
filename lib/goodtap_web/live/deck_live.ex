@@ -308,7 +308,7 @@ defmodule GoodtapWeb.DeckLive do
                   >
                     <input type="hidden" name="deck_card_id" value={dc.id} />
                     <select class="select select-xs bg-gray-700 w-full text-xs" name="printing_id">
-                      <%= for p <- (card && card.printings || []) do %>
+                      <%= for p <- Enum.sort_by(card && card.printings || [], & &1["released_at"], :desc) do %>
                         <option value={p["id"]} selected={dc.printing_id == p["id"]}>
                           {String.upcase(p["set_code"])} #{p["collector_number"]}
                         </option>
