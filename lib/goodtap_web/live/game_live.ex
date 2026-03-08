@@ -1947,8 +1947,11 @@ defmodule GoodtapWeb.GameLive do
         <span class="text-sm font-semibold">Game Log</span>
         <button phx-click="toggle_log" class="text-gray-400 hover:text-white text-lg leading-none">×</button>
       </div>
-      <div class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-1">
-        <%= for entry <- (get_in(@game_state, ["log"]) || []) do %>
+      <div id="game-log-scroll" phx-hook="ScrollBottom" class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-1">
+        <div :if={(get_in(@game_state, ["log"]) || []) == []} class="text-xs text-gray-500 italic">
+          No actions yet.
+        </div>
+        <%= for entry <- Enum.reverse(get_in(@game_state, ["log"]) || []) do %>
           <div class="text-xs leading-relaxed">
             <span class={if entry["p"] == @my_role, do: "text-blue-400 font-medium", else: "text-orange-400 font-medium"}>
               {entry["u"]}
@@ -1956,9 +1959,6 @@ defmodule GoodtapWeb.GameLive do
             <span class="text-gray-300"> {entry["m"]}</span>
           </div>
         <% end %>
-        <div :if={(get_in(@game_state, ["log"]) || []) == []} class="text-xs text-gray-500 italic">
-          No actions yet.
-        </div>
       </div>
     </div>
 

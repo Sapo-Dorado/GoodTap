@@ -13,6 +13,11 @@ import CounterButton from "./hooks/counter_button"
 import CardPreview from "./hooks/card_preview"
 import DeckCardMenu from "./hooks/deck_card_menu"
 
+const ScrollBottom = {
+  mounted() { this.el.scrollTop = this.el.scrollHeight; },
+  updated() { this.el.scrollTop = this.el.scrollHeight; },
+};
+
 const Hooks = {
   DragDrop,
   CopyToClipboard,
@@ -20,6 +25,7 @@ const Hooks = {
   CounterButton,
   CardPreview,
   DeckCardMenu,
+  ScrollBottom,
 }
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
