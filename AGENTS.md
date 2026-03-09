@@ -1,5 +1,13 @@
 This is a web application written using the Phoenix web framework.
 
+## Unit Test Policy
+
+**NEVER modify existing committed unit tests** without:
+1. Explaining to the user exactly why the test needs to change and what is wrong with it
+2. Obtaining the user's **explicit approval** before making any edits
+
+This applies to all files under `test/` and `assets/js/**/*.test.js`. Adding *new* tests is always fine. Changing or deleting *existing committed* tests requires approval.
+
 ## Game Domain: Card Visibility & Log Messages
 
 ### The `known` system

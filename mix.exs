@@ -27,7 +27,7 @@ defmodule Goodtap.MixProject do
 
   def cli do
     [
-      preferred_envs: [precommit: :test]
+      preferred_envs: [precommit: :test, "test.all": :test]
     ]
   end
 
@@ -76,6 +76,7 @@ defmodule Goodtap.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      "test.all": ["ecto.create --quiet", "ecto.migrate --quiet", "test", &run_js_tests/1],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind goodtap", "esbuild goodtap"],
       "assets.deploy": [
@@ -83,7 +84,14 @@ defmodule Goodtap.MixProject do
         "esbuild goodtap --minify",
         "phx.digest"
       ],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test.all"]
     ]
+  end
+
+  defp run_js_tests(_args) do
+    case System.cmd("npm", ["test"], cd: "assets", into: IO.stream()) do
+      {_, 0} -> :ok
+      {_, code} -> Mix.raise("JS tests failed with exit code #{code}")
+    end
   end
 end

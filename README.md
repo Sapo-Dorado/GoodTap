@@ -15,6 +15,23 @@ Or inside IEx:
 iex -S mix phx.server
 ```
 
+## Testing
+
+```bash
+mix test                        # Elixir tests only
+mix test.all                    # Elixir + JS tests
+mix test test/goodtap/game_engine/  # game engine unit tests only (no DB required)
+mix precommit                   # compile + format + full test suite (Elixir + JS)
+```
+
+JS tests can also be run directly:
+
+```bash
+cd assets
+npm test                        # run once
+npm run test:watch              # watch mode
+```
+
 ## Production deployment
 
 The repo includes a Nix flake that builds the app and manages the full stack as a single NixOS host:
