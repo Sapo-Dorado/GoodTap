@@ -53,6 +53,10 @@ const DragDrop = {
     this.myRole = this.el.dataset.myRole;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
+    // Tracks instance_ids optimistically consumed from pile zones (deck/graveyard/exile)
+    // so rapid keypresses don't re-send the same card before the server responds.
+    // Cleared on every LiveView patch (updated() hook).
+    this._consumedPileCards = new Set();
 
     const onMousedown = (e) => {
       if (e.target.closest("[data-no-hotkey]")) return;
@@ -146,19 +150,25 @@ const DragDrop = {
       // at keypress time rather than relying on cached hoveredCard. This lets rapid
       // keypresses work correctly: each press finds the new top card after the previous
       // one was hidden optimistically.
+      //
+      // We track consumed instance_ids locally (cleared on each server patch) so that
+      // rapid presses don't re-send the same card while waiting for the server to respond
+      // with the next top card.
       const PILE_ZONES = new Set(["deck", "graveyard", "exile"]);
       let target = hovered;
-      if (hovered && PILE_ZONES.has(hovered.zone)) {
+      if (hovered && PILE_ZONES.has(hovered.zone) && MOVE_KEYS.has(key)) {
         const pileEl = document.querySelector(`[data-pile-zone="${hovered.zone}"]`);
         const topCard = pileEl && pileEl.querySelector("[data-draggable][data-instance-id]");
-        if (topCard && topCard.style.visibility !== "hidden") {
+        const topId = topCard && topCard.dataset.instanceId;
+        if (topId && !this._consumedPileCards.has(topId)) {
           target = {
-            instanceId: topCard.dataset.instanceId,
+            instanceId: topId,
             zone: topCard.dataset.zone,
             owner: topCard.dataset.owner
           };
+          this._consumedPileCards.add(topId);
         } else {
-          // All cards hidden (pending server update) — skip this keypress
+          // Top card already consumed (pending server update) — skip
           target = null;
         }
       }
@@ -206,6 +216,13 @@ const DragDrop = {
       document.removeEventListener("mousedown", onDocMousedown);
       if (handMenuBtn) handMenuBtn.removeEventListener("click", onHandMenuClick);
     };
+  },
+
+  updated() {
+    // Server has responded with new state — clear consumed pile cards so the
+    // next keypress can pick up the new top card.
+    this._consumedPileCards.clear();
+    syncZCounter();
   },
 
   destroyed() {
