@@ -40,7 +40,7 @@
 
         in beamPkgs.mixRelease {
           pname = "goodtap";
-          version = "0.1.4"; # keep in sync with mix.exs
+          version = "0.1.5"; # keep in sync with mix.exs
           src = ./.;
           inherit elixir mixFodDeps;
 
