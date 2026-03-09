@@ -8,7 +8,7 @@ headers = [{"User-Agent", "GoodTap/1.0"}, {"Accept", "application/json"}]
 # row per unique card, with all its printings embedded. Each printing retains
 # is_default and released_at so we can compute the default printing per card.
 
-artwork_raw =
+cards_path =
   case System.get_env("ARTWORK_JSON_PATH") do
     nil ->
       IO.puts("Fetching default-cards bulk data URI from Scryfall...")
@@ -17,17 +17,18 @@ artwork_raw =
         Req.get("https://api.scryfall.com/bulk-data/default-cards", headers: headers)
 
       url = meta["download_uri"]
-      IO.puts("Downloading #{url}...")
-      {:ok, %{body: body}} = Req.get(url, headers: headers, receive_timeout: 300_000)
-      Jason.encode!(body)
+      tmp = System.tmp_dir!() |> Path.join("mtg_default_cards.json")
+      IO.puts("Downloading #{url} to #{tmp}...")
+      {:ok, _} = Req.get(url, headers: headers, receive_timeout: 600_000, into: File.stream!(tmp))
+      tmp
 
     path ->
       IO.puts("Loading default-cards from #{path}...")
-      File.read!(path)
+      path
   end
 
 IO.puts("Parsing default-cards JSON...")
-artwork_cards = Jason.decode!(artwork_raw)
+artwork_cards = cards_path |> File.read!() |> Jason.decode!()
 
 IO.puts("Grouping #{length(artwork_cards)} printings by oracle_id...")
 
