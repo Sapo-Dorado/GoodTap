@@ -221,89 +221,108 @@ defmodule GoodtapWeb.GameLive do
     has_selection = not MapSet.equal?(selected, MapSet.new())
     is_my_card = not is_nil(id) and owner == my_role
 
-    # Card-level actions only fire on your own cards (except k/e which handle opponent too)
     valid_actions = if is_my_card, do: Hotkeys.valid_actions_for(zone), else: []
     valid_opponent_actions = if not is_nil(id) and owner == opp_role, do: Hotkeys.valid_actions_for_opponent_battlefield(), else: []
+    action_allowed? = fn action -> action in valid_actions or action in valid_opponent_actions end
 
-    action_allowed? = fn action ->
-      action in valid_actions or action in valid_opponent_actions
-    end
+    k = Hotkeys
+    sel_names = fn st, p -> Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ") end
 
     cond do
-      # Selection actions — only apply to your own selected cards
-      has_selection and key == "d" ->
-        apply_to_selection(socket, fn st, p, sid ->
-          Actions.move_to_graveyard(st, p, sid, "battlefield")
-        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → graveyard" end)
+      # ── Multi-selection actions (battlefield only) ──────────────────────
+      has_selection and key == k.key_for(:move_to_graveyard) ->
+        apply_to_selection(socket,
+          fn st, p, sid -> Actions.move_to_graveyard(st, p, sid, "battlefield") end,
+          fn st, p -> "#{sel_names.(st, p)} → graveyard" end)
 
-      has_selection and key == "s" ->
-        apply_to_selection(socket, fn st, p, sid ->
-          Actions.move_to_exile(st, p, sid, "battlefield")
-        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → exile" end)
+      has_selection and key == k.key_for(:move_to_exile) ->
+        apply_to_selection(socket,
+          fn st, p, sid -> Actions.move_to_exile(st, p, sid, "battlefield") end,
+          fn st, p -> "#{sel_names.(st, p)} → exile" end)
 
-      has_selection and key == "f" ->
-        apply_to_selection(socket, fn st, p, sid ->
-          Actions.flip_card(st, p, sid, "battlefield")
-        end, fn st, p -> "flipped #{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")}" end)
+      has_selection and key == k.key_for(:move_to_deck_top) ->
+        apply_to_selection(socket,
+          fn st, p, sid -> Actions.move_to_deck(st, p, sid, "battlefield") end,
+          fn st, p -> "#{sel_names.(st, p)} → deck (top)" end)
 
-      has_selection and key == "space" ->
+      has_selection and key == k.key_for(:move_to_deck_bottom) ->
+        apply_to_selection(socket,
+          fn st, p, sid -> Actions.move_to_deck_bottom(st, p, sid, "battlefield") end,
+          fn st, p -> "#{sel_names.(st, p)} → deck (bottom)" end)
+
+      has_selection and key == k.key_for(:move_to_hand) ->
+        apply_to_selection(socket,
+          fn st, p, sid -> Actions.move_to_hand(st, p, sid, "battlefield") end,
+          fn st, p -> "#{sel_names.(st, p)} → hand" end)
+
+      has_selection and key == k.key_for(:flip_card) ->
+        apply_to_selection(socket,
+          fn st, p, sid -> Actions.flip_card(st, p, sid, "battlefield") end,
+          fn st, p -> "flipped #{sel_names.(st, p)}" end)
+
+      has_selection and key == k.key_for(:tap) ->
         apply_to_selection(socket, fn st, p, sid -> Actions.tap(st, p, sid) end, nil)
-
-      has_selection and key == "t" ->
-        apply_to_selection(socket, fn st, p, sid ->
-          Actions.move_to_deck(st, p, sid, "battlefield")
-        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → deck (top)" end)
-
-      has_selection and key == "y" ->
-        apply_to_selection(socket, fn st, p, sid ->
-          Actions.move_to_deck_bottom(st, p, sid, "battlefield")
-        end, fn st, p -> "#{Enum.map(MapSet.to_list(selected), &card_name_from_state(st, p, &1)) |> Enum.join(", ")} → deck (bottom)" end)
 
       true ->
         cond do
-          key == "d" and :draw_top_to in valid_actions ->
+          # ── Deck top-card shortcuts ────────────────────────────────────
+          key == k.key_for(:move_to_graveyard) and :draw_top_to in valid_actions ->
             apply_action(socket, fn st, p ->
+              top = List.first(get_in(st, [p, "zones", "deck"]) || [])
               with {:ok, new_st} <- Actions.draw_top_to(st, p, "graveyard") do
-                {:ok, append_log(new_st, p, "top card → graveyard")}
+                {:ok, append_log(new_st, p, "#{top["name"] || "top card"} → graveyard")}
               end
             end)
 
-          key == "s" and :draw_top_to in valid_actions ->
+          key == k.key_for(:move_to_exile) and :draw_top_to in valid_actions ->
             apply_action(socket, fn st, p ->
+              top = List.first(get_in(st, [p, "zones", "deck"]) || [])
               with {:ok, new_st} <- Actions.draw_top_to(st, p, "exile") do
-                {:ok, append_log(new_st, p, "top card → exile")}
+                {:ok, append_log(new_st, p, "#{top["name"] || "top card"} → exile")}
               end
             end)
 
-          key == "space" and :draw_top_to in valid_actions ->
+          key == k.key_for(:move_to_battlefield) and :draw_top_to in valid_actions ->
             apply_action(socket, fn st, p ->
+              top = List.first(get_in(st, [p, "zones", "deck"]) || [])
               with {:ok, new_st} <- Actions.draw_top_to(st, p, "battlefield") do
-                {:ok, append_log(new_st, p, "top card → battlefield")}
+                {:ok, append_log(new_st, p, "#{top["name"] || "top card"} → battlefield")}
               end
             end)
 
-          key == "d" and not is_nil(id) and :move_to_graveyard in valid_actions ->
+          key == k.key_for(:move_to_hand) and :draw_top_to in valid_actions ->
+            apply_action(socket, fn st, p ->
+              top = List.first(get_in(st, [p, "zones", "deck"]) || [])
+              name = if top && State.known_to?(top, "host") && State.known_to?(top, "opponent"),
+                do: top["name"], else: "a card"
+              with {:ok, new_st} <- Actions.draw_top_to(st, p, "hand") do
+                {:ok, append_log(new_st, p, "#{name} → hand")}
+              end
+            end)
+
+          # ── Single-card actions ────────────────────────────────────────
+          key == k.key_for(:move_to_graveyard) and not is_nil(id) and :move_to_graveyard in valid_actions ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.move_to_graveyard(st, p, id, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → graveyard")}
               end
             end)
 
-          key == "s" and not is_nil(id) and :move_to_exile in valid_actions ->
+          key == k.key_for(:move_to_exile) and not is_nil(id) and :move_to_exile in valid_actions ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.move_to_exile(st, p, id, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → exile")}
               end
             end)
 
-          key == "f" and not is_nil(id) and :flip_card in valid_actions ->
+          key == k.key_for(:flip_card) and not is_nil(id) and :flip_card in valid_actions ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.flip_card(st, p, id, zone) do
                 {:ok, append_log(new_st, p, "flipped #{card_name_from_state(new_st, p, id)}")}
               end
             end)
 
-          key == "space" and not is_nil(id) and :tap in valid_actions ->
+          key == k.key_for(:tap) and not is_nil(id) and :tap in valid_actions ->
             apply_action(socket, fn st, p ->
               card = find_card_in_zone(st, p, "battlefield", id)
               verb = if card && card["tapped"], do: "untapped", else: "tapped"
@@ -312,31 +331,38 @@ defmodule GoodtapWeb.GameLive do
               end
             end)
 
-          key == "t" and not is_nil(id) and :move_to_deck_top in valid_actions ->
+          key == k.key_for(:move_to_deck_top) and not is_nil(id) and :move_to_deck_top in valid_actions ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.move_to_deck(st, p, id, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → deck (top)")}
               end
             end)
 
-          key == "y" and not is_nil(id) and :move_to_deck_bottom in valid_actions ->
+          key == k.key_for(:move_to_deck_bottom) and not is_nil(id) and :move_to_deck_bottom in valid_actions ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.move_to_deck_bottom(st, p, id, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → deck (bottom)")}
               end
             end)
 
-          key == "v" ->
+          key == k.key_for(:move_to_hand) and not is_nil(id) and :move_to_hand in valid_actions ->
             apply_action(socket, fn st, p ->
-              with {:ok, new_st} <- Actions.shuffle(st, p) do
-                {:ok, append_log(new_st, p, "shuffled their deck")}
+              with {:ok, new_st} <- Actions.move_to_hand(st, p, id, zone) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → hand")}
               end
             end)
 
-          key == "u" and not is_nil(id) and :add_counter in valid_actions ->
+          key == k.key_for(:move_to_battlefield) and not is_nil(id) and :move_to_battlefield in valid_actions ->
+            apply_action(socket, fn st, p ->
+              with {:ok, new_st} <- Actions.move_to_battlefield(st, p, id, zone, 0.5, 0.5) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → battlefield")}
+              end
+            end)
+
+          key == k.key_for(:add_counter) and not is_nil(id) and :add_counter in valid_actions ->
             {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
 
-          key == "k" and not is_nil(id) and action_allowed?.(:copy_card) ->
+          key == k.key_for(:copy_card) and not is_nil(id) and action_allowed?.(:copy_card) ->
             if owner == my_role do
               apply_action(socket, fn st, p ->
                 with {:ok, new_st} <- Actions.copy_card(st, p, id) do
@@ -351,28 +377,44 @@ defmodule GoodtapWeb.GameLive do
               end)
             end
 
-          key == "e" and not is_nil(id) and action_allowed?.(:target_card) ->
+          key == k.key_for(:target_card) and not is_nil(id) and action_allowed?.(:target_card) ->
             Games.broadcast_target_card(socket.assigns.game.id, id)
             {:noreply, socket}
 
-          key == "w" ->
-            {:noreply, assign(socket, token_search: true)}
+          # ── Global actions ─────────────────────────────────────────────
+          key == k.key_for(:shuffle) ->
+            apply_action(socket, fn st, p ->
+              with {:ok, new_st} <- Actions.shuffle(st, p) do
+                {:ok, append_log(new_st, p, "shuffled their deck")}
+              end
+            end)
 
-          key == "x" ->
+          key == k.key_for(:untap_all) ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.untap_all(st, p) do
                 {:ok, append_log(new_st, p, "untapped all")}
               end
             end)
 
-          key == "p" and zone in ["deck", "deck_top"] ->
+          key == k.key_for(:new_turn) ->
+            apply_action(socket, fn st, p ->
+              with {:ok, st1} <- Actions.untap_all(st, p),
+                   {:ok, st2} <- Actions.draw(st1, p, 1) do
+                {:ok, append_log(st2, p, "untapped all and drew a card")}
+              end
+            end)
+
+          key == k.key_for(:create_token) ->
+            {:noreply, assign(socket, token_search: true)}
+
+          key == k.key_for(:draw_face_down) and zone in ["deck", "deck_top"] ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.draw_face_down(st, p) do
                 {:ok, append_log(new_st, p, "drew a card face down")}
               end
             end)
 
-          key == "c" ->
+          key == k.key_for(:draw_one) ->
             apply_action(socket, fn st, p ->
               with {:ok, new_st} <- Actions.draw(st, p, 1) do
                 {:ok, append_log(new_st, p, "drew a card")}
@@ -484,14 +526,19 @@ defmodule GoodtapWeb.GameLive do
   end
 
   def handle_event("action", %{"type" => "draw_top_to", "dest" => dest}, socket)
-      when dest in ["battlefield", "battlefield_face_down", "graveyard", "exile"] do
+      when dest in ["battlefield", "battlefield_face_down", "graveyard", "exile", "hand"] do
     apply_action(socket, fn state, player ->
+      top = List.first(get_in(state, [player, "zones", "deck"]) || [])
+      already_public = top && State.known_to?(top, "host") && State.known_to?(top, "opponent")
+      name = (top && top["name"]) || "top card"
+
       with {:ok, new_state} <- Actions.draw_top_to(state, player, dest) do
         label = case dest do
-          "battlefield" -> "top card → battlefield"
-          "battlefield_face_down" -> "top card → battlefield (face down)"
-          "graveyard" -> "top card → graveyard"
-          "exile" -> "top card → exile"
+          "battlefield"          -> "#{name} → battlefield"
+          "battlefield_face_down" -> "#{if already_public, do: name, else: "a card"} → battlefield (face down)"
+          "graveyard"            -> "#{name} → graveyard"
+          "exile"                -> "#{name} → exile"
+          "hand"                 -> "#{if already_public, do: name, else: "a card"} → hand"
         end
         {:ok, append_log(new_state, player, label)}
       end
@@ -1371,6 +1418,7 @@ defmodule GoodtapWeb.GameLive do
           class="relative w-full h-full overflow-hidden"
           data-drop-zone="battlefield"
           data-my-role={@my_role}
+          data-move-keys={Hotkeys.move_keys_csv()}
           phx-hook="Battlefield"
           style="background: linear-gradient(to bottom, #111827 50%, #1a2332 50%);"
         >
@@ -1723,7 +1771,13 @@ defmodule GoodtapWeb.GameLive do
                     <span class="text-gray-400 ml-6">›</span>
                   </div>
                   <div id="draw-to-submenu" class="submenu-panel absolute left-full top-0 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-44 z-10" style="display:none">
-                    <%= for {label, dest, hint} <- [{"Play", "battlefield", "Space"}, {"Play (Face Down)", "battlefield_face_down", "P"}, {"Graveyard", "graveyard", "D"}, {"Exile", "exile", "S"}] do %>
+                    <%= for {label, dest, hint} <- [
+                      {"Battlefield", "battlefield", Hotkeys.display_for(:move_to_battlefield)},
+                      {"Battlefield (Face Down)", "battlefield_face_down", Hotkeys.display_for(:draw_face_down)},
+                      {"Graveyard", "graveyard", Hotkeys.display_for(:move_to_graveyard)},
+                      {"Exile", "exile", Hotkeys.display_for(:move_to_exile)},
+                      {"Hand", "hand", Hotkeys.display_for(:move_to_hand)}
+                    ] do %>
                       <button
                         phx-click={JS.push("action", value: %{type: "draw_top_to", dest: dest})}
                         class="w-full text-left px-4 py-2 text-sm hover:bg-gray-700 flex items-center justify-between gap-4"

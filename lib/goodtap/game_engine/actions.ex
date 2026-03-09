@@ -246,6 +246,10 @@ defmodule Goodtap.GameEngine.Actions do
             "exile" ->
               card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
               if card["is_token"], do: state, else: prepend_to_zone(state, player, "exile", card)
+
+            "hand" ->
+              card = card |> reset_face() |> Map.put("tapped", false) |> mark_known_to(player)
+              append_to_zone(state, player, "hand", card)
           end
 
         {:ok, maybe_reveal_deck_top(state, player)}

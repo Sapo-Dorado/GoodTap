@@ -124,8 +124,9 @@ const DragDrop = {
       }
     };
 
-    // Keys that move a card out of its zone — we hide it optimistically
-    const MOVE_KEYS = new Set(["d", "s", "t", "y"]);
+    // Keys that move a card out of its zone — sourced from data-move-keys
+    // attribute rendered by the server's Hotkeys module. Never hardcoded here.
+    const MOVE_KEYS = new Set((this.el.dataset.moveKeys || "").split(",").filter(Boolean));
 
     const onKeydown = (e) => {
       // Don't fire hotkeys when typing in inputs
@@ -137,8 +138,8 @@ const DragDrop = {
         return;
       }
 
-      const key = e.key === " " ? "space" : e.key.toLowerCase();
-      if (key === "space") e.preventDefault();
+      // Preserve case so shift+l arrives as "L", shift+u as "U", etc.
+      const key = e.key === " " ? "space" : e.key;
       const hovered = this.hoveredCard;
 
       // Optimistically hide the card before the server round-trip
