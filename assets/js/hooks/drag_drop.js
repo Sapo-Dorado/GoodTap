@@ -3,7 +3,10 @@ const CARD_H = 78;
 
 // Hide a card element immediately (before server confirms the move).
 // LiveView will remove it from the DOM when the new state arrives.
+// Pile zones (deck/graveyard/exile) are intentionally excluded — we don't know
+// the next card's image so it's better to leave the current one visible.
 function optimisticallyHideCard(instanceId, zone) {
+  if (zone === "graveyard" || zone === "exile" || zone === "deck") return;
   const el =
     document.getElementById(`card-${instanceId}`) ||
     document.getElementById(`hand-card-${instanceId}`) ||
@@ -53,10 +56,6 @@ const DragDrop = {
     this.myRole = this.el.dataset.myRole;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
-    // Tracks instance_ids optimistically consumed from pile zones (deck/graveyard/exile)
-    // so rapid keypresses don't re-send the same card before the server responds.
-    // Cleared on every LiveView patch (updated() hook).
-    this._consumedPileCards = new Set();
 
     const onMousedown = (e) => {
       if (e.target.closest("[data-no-hotkey]")) return;
@@ -146,43 +145,16 @@ const DragDrop = {
       const key = e.key === " " ? "space" : e.key;
       const hovered = this.hoveredCard;
 
-      // For pile zones (deck/graveyard/exile), re-read the current top card element
-      // at keypress time rather than relying on cached hoveredCard. This lets rapid
-      // keypresses work correctly: each press finds the new top card after the previous
-      // one was hidden optimistically.
-      //
-      // We track consumed instance_ids locally (cleared on each server patch) so that
-      // rapid presses don't re-send the same card while waiting for the server to respond
-      // with the next top card.
-      const PILE_ZONES = new Set(["deck", "graveyard", "exile"]);
-      let target = hovered;
-      if (hovered && PILE_ZONES.has(hovered.zone) && MOVE_KEYS.has(key)) {
-        const pileEl = document.querySelector(`[data-pile-zone="${hovered.zone}"]`);
-        const topCard = pileEl && pileEl.querySelector("[data-draggable][data-instance-id]");
-        const topId = topCard && topCard.dataset.instanceId;
-        if (topId && !this._consumedPileCards.has(topId)) {
-          target = {
-            instanceId: topId,
-            zone: topCard.dataset.zone,
-            owner: topCard.dataset.owner
-          };
-          this._consumedPileCards.add(topId);
-        } else {
-          // Top card already consumed (pending server update) — skip
-          target = null;
-        }
-      }
-
       // Optimistically hide the card before the server round-trip
-      if (target && MOVE_KEYS.has(key) && target.owner === this.myRole) {
-        optimisticallyHideCard(target.instanceId, target.zone);
+      if (hovered && MOVE_KEYS.has(key) && hovered.owner === this.myRole) {
+        optimisticallyHideCard(hovered.instanceId, hovered.zone);
       }
 
       this.pushEvent("hotkey", {
         key,
-        instance_id: target ? target.instanceId : null,
-        zone: target ? target.zone : null,
-        owner: target ? target.owner : null
+        instance_id: hovered ? hovered.instanceId : null,
+        zone: hovered ? hovered.zone : null,
+        owner: hovered ? hovered.owner : null
       });
     };
 
@@ -219,9 +191,6 @@ const DragDrop = {
   },
 
   updated() {
-    // Server has responded with new state — clear consumed pile cards so the
-    // next keypress can pick up the new top card.
-    this._consumedPileCards.clear();
     syncZCounter();
   },
 

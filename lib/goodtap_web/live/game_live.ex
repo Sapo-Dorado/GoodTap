@@ -301,17 +301,21 @@ defmodule GoodtapWeb.GameLive do
             end)
 
           # ── Single-card actions ────────────────────────────────────────
+          # For pile zones (graveyard/exile/deck), resolve_pile_id always uses the
+          # current top card so rapid keypresses each act on a different card.
           key == k.key_for(:move_to_graveyard) and not is_nil(id) and :move_to_graveyard in valid_actions ->
             apply_action(socket, fn st, p ->
-              with {:ok, new_st} <- Actions.move_to_graveyard(st, p, id, zone) do
-                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → graveyard")}
+              eid = resolve_pile_id(st, p, zone, id)
+              with {:ok, new_st} <- Actions.move_to_graveyard(st, p, eid, zone) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → graveyard")}
               end
             end)
 
           key == k.key_for(:move_to_exile) and not is_nil(id) and :move_to_exile in valid_actions ->
             apply_action(socket, fn st, p ->
-              with {:ok, new_st} <- Actions.move_to_exile(st, p, id, zone) do
-                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → exile")}
+              eid = resolve_pile_id(st, p, zone, id)
+              with {:ok, new_st} <- Actions.move_to_exile(st, p, eid, zone) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → exile")}
               end
             end)
 
@@ -333,29 +337,33 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_deck_top) and not is_nil(id) and :move_to_deck_top in valid_actions ->
             apply_action(socket, fn st, p ->
-              with {:ok, new_st} <- Actions.move_to_deck(st, p, id, zone) do
-                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → deck (top)")}
+              eid = resolve_pile_id(st, p, zone, id)
+              with {:ok, new_st} <- Actions.move_to_deck(st, p, eid, zone) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → deck (top)")}
               end
             end)
 
           key == k.key_for(:move_to_deck_bottom) and not is_nil(id) and :move_to_deck_bottom in valid_actions ->
             apply_action(socket, fn st, p ->
-              with {:ok, new_st} <- Actions.move_to_deck_bottom(st, p, id, zone) do
-                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → deck (bottom)")}
+              eid = resolve_pile_id(st, p, zone, id)
+              with {:ok, new_st} <- Actions.move_to_deck_bottom(st, p, eid, zone) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → deck (bottom)")}
               end
             end)
 
           key == k.key_for(:move_to_hand) and not is_nil(id) and :move_to_hand in valid_actions ->
             apply_action(socket, fn st, p ->
-              with {:ok, new_st} <- Actions.move_to_hand(st, p, id, zone) do
-                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → hand")}
+              eid = resolve_pile_id(st, p, zone, id)
+              with {:ok, new_st} <- Actions.move_to_hand(st, p, eid, zone) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → hand")}
               end
             end)
 
           key == k.key_for(:move_to_battlefield) and not is_nil(id) and :move_to_battlefield in valid_actions ->
             apply_action(socket, fn st, p ->
-              with {:ok, new_st} <- Actions.move_to_battlefield(st, p, id, zone, 0.5, 0.5) do
-                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, id)} → battlefield")}
+              eid = resolve_pile_id(st, p, zone, id)
+              with {:ok, new_st} <- Actions.move_to_battlefield(st, p, eid, zone, 0.5, 0.5) do
+                {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → battlefield")}
               end
             end)
 
@@ -1330,6 +1338,18 @@ defmodule GoodtapWeb.GameLive do
     JS.hide(to: "##{el_id}")
   end
   defp action_js(_instance_id, _zone, _action), do: %JS{}
+
+  # For pile zones (graveyard, exile, deck), the client always sends the top card's
+  # instance_id, but rapid keypresses will re-send the same id before the server has
+  # responded. Resolve to the actual current top card so every event acts on a
+  # different card regardless of what id arrived.
+  defp resolve_pile_id(state, player, zone, _client_id) when zone in ["graveyard", "exile", "deck"] do
+    case get_in(state, [player, "zones", zone]) do
+      [top | _] -> top["instance_id"]
+      _ -> nil
+    end
+  end
+  defp resolve_pile_id(_state, _player, _zone, client_id), do: client_id
 
   defp card_name_from_state(state, player, instance_id) do
     all_zones = ["battlefield", "graveyard", "exile", "hand", "deck"]
