@@ -142,16 +142,37 @@ const DragDrop = {
       const key = e.key === " " ? "space" : e.key;
       const hovered = this.hoveredCard;
 
+      // For pile zones (deck/graveyard/exile), re-read the current top card element
+      // at keypress time rather than relying on cached hoveredCard. This lets rapid
+      // keypresses work correctly: each press finds the new top card after the previous
+      // one was hidden optimistically.
+      const PILE_ZONES = new Set(["deck", "graveyard", "exile"]);
+      let target = hovered;
+      if (hovered && PILE_ZONES.has(hovered.zone)) {
+        const pileEl = document.querySelector(`[data-pile-zone="${hovered.zone}"]`);
+        const topCard = pileEl && pileEl.querySelector("[data-draggable][data-instance-id]");
+        if (topCard && topCard.style.visibility !== "hidden") {
+          target = {
+            instanceId: topCard.dataset.instanceId,
+            zone: topCard.dataset.zone,
+            owner: topCard.dataset.owner
+          };
+        } else {
+          // All cards hidden (pending server update) — skip this keypress
+          target = null;
+        }
+      }
+
       // Optimistically hide the card before the server round-trip
-      if (hovered && MOVE_KEYS.has(key) && hovered.owner === this.myRole) {
-        optimisticallyHideCard(hovered.instanceId, hovered.zone);
+      if (target && MOVE_KEYS.has(key) && target.owner === this.myRole) {
+        optimisticallyHideCard(target.instanceId, target.zone);
       }
 
       this.pushEvent("hotkey", {
         key,
-        instance_id: hovered ? hovered.instanceId : null,
-        zone: hovered ? hovered.zone : null,
-        owner: hovered ? hovered.owner : null
+        instance_id: target ? target.instanceId : null,
+        zone: target ? target.zone : null,
+        owner: target ? target.owner : null
       });
     };
 
