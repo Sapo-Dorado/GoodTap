@@ -27,19 +27,19 @@ defmodule GoodtapWeb.GameSetupLive do
           # Room available — join
           length(game.game_players) < game.max_players ->
             case Games.join_game(game, user) do
-              {:ok, updated, _key} ->
-                Games.broadcast_game_update(updated)
-                updated
-              {:error, :full} ->
-                game
-              _ ->
-                game
+              {:ok, updated, _key} -> updated
+              {:error, :full} -> game
+              _ -> game
             end
 
           # Full — redirect
           true ->
             nil
         end
+
+      if Phoenix.LiveView.connected?(socket) && game != nil do
+        Games.broadcast_game_update(game)
+      end
 
       if is_nil(game) do
         {:ok,
@@ -164,7 +164,7 @@ defmodule GoodtapWeb.GameSetupLive do
             </div>
           <% end %>
 
-          <%= for _i <- (length(@game.game_players) + 1)..@game.max_players do %>
+          <%= for _i <- (length(@game.game_players) + 1)..@game.max_players//1, length(@game.game_players) < @game.max_players do %>
             <div class="flex items-center gap-2 text-gray-500">
               <div class="w-2 h-2 rounded-full bg-gray-600"></div>
               <span>Waiting for player...</span>
