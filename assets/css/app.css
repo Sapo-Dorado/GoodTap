@@ -156,7 +156,8 @@
   transform: rotate(90deg);
 }
 
-/* Opponent cards use .opp-card-inner instead of .card-draggable */
+/* Opponent cards use .opp-card-inner instead of .card-draggable.
+   .opp-card-inner must be a direct child of .card-on-battlefield in the template. */
 .card-on-battlefield.is-tapped .opp-card-inner {
   transform: rotate(90deg);
 }

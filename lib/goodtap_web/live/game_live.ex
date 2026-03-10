@@ -1460,7 +1460,9 @@ defmodule GoodtapWeb.GameLive do
 
           <%!-- Opponent's cards — mirrored using right/bottom so their (x,y) becomes our (right: x%, bottom: y%).
                This means their card near their hand (y≈1, bottom of their screen) appears near the top of ours.
-               Cards are rotated 180° visually so the card text faces us. --%>
+               Cards are rotated 180° visually so the card text faces us.
+               NOTE: .opp-card-inner must remain a direct child of .card-on-battlefield —
+               the is-tapped CSS rule targets it for tap rotation (see app.css). --%>
           <%= for card <- zone_cards(@opp, "battlefield") do %>
             <%
               opp_x = trunc((card["x"] || 0.5) * 100)
