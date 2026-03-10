@@ -115,4 +115,97 @@ defmodule Goodtap.GameEngine.StateTest do
       assert State.starting_life(4) == 40
     end
   end
+
+  describe "battlefield_for_view/3" do
+    # Extracts {card, owner} tuples and returns just instance_ids for easy assertions
+    defp ids_with_owner(tuples) do
+      Enum.map(tuples, fn {card, owner} -> {card["instance_id"], owner} end)
+    end
+
+    test "p1 sees their own cards on their own battlefield" do
+      c = card(%{"instance_id" => "c1"})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+
+      result = State.battlefield_for_view(state, "p1", "p2")
+      assert {"c1", "p1"} in ids_with_owner(result)
+    end
+
+    test "p1 sees p2's cards on p2's battlefield" do
+      c = card(%{"instance_id" => "c2"})
+      state = game_state() |> with_cards_in("p2", "battlefield", [c])
+
+      result = State.battlefield_for_view(state, "p1", "p2")
+      assert {"c2", "p2"} in ids_with_owner(result)
+    end
+
+    test "p1's card placed on p2's battlefield is visible to p1 viewing p2" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+
+      result = State.battlefield_for_view(state, "p1", "p2")
+      assert {"c1", "p1"} in ids_with_owner(result)
+    end
+
+    test "p1's card placed on p2's battlefield is NOT visible to p1 viewing p3" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state_3p() |> with_cards_in("p1", "battlefield", [c])
+
+      result = State.battlefield_for_view(state, "p1", "p3")
+      refute {"c1", "p1"} in ids_with_owner(result)
+    end
+
+    test "p3 viewing p2 sees p1's card placed on p2's battlefield" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state_3p() |> with_cards_in("p1", "battlefield", [c])
+
+      result = State.battlefield_for_view(state, "p3", "p2")
+      assert {"c1", "p1"} in ids_with_owner(result)
+    end
+
+    test "p2 viewing their own board (as viewer) sees p1's card placed on it" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state_3p() |> with_cards_in("p1", "battlefield", [c])
+
+      result = State.battlefield_for_view(state, "p2", "p1")
+      assert {"c1", "p1"} in ids_with_owner(result)
+    end
+
+    test "card placed on p3 is not visible when viewing p2" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p3"})
+      state = game_state_3p() |> with_cards_in("p1", "battlefield", [c])
+
+      result = State.battlefield_for_view(state, "p1", "p2")
+      refute {"c1", "p1"} in ids_with_owner(result)
+    end
+
+    test "multiple players' cards placed on various battlefields visible correctly" do
+      c1 = card(%{"instance_id" => "c1"})  # p1's card, on p1's battlefield (default)
+      c2 = card(%{"instance_id" => "c2", "on_battlefield" => "p2"})  # p1 placed on p2
+      c3 = card(%{"instance_id" => "c3"})  # p2's own card
+      c4 = card(%{"instance_id" => "c4", "on_battlefield" => "p3"})  # p2 placed on p3
+
+      state =
+        game_state_3p()
+        |> with_cards_in("p1", "battlefield", [c1, c2])
+        |> with_cards_in("p2", "battlefield", [c3, c4])
+
+      # p1 viewing p2: sees c1 (own), c2 (own placed on p2), c3 (p2's own)
+      # does NOT see c4 (placed on p3, not visible)
+      result = State.battlefield_for_view(state, "p1", "p2")
+      result_ids = ids_with_owner(result)
+      assert {"c1", "p1"} in result_ids
+      assert {"c2", "p1"} in result_ids
+      assert {"c3", "p2"} in result_ids
+      refute {"c4", "p2"} in result_ids
+    end
+
+    test "owner_key is always the card's actual owner, not the battlefield" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+
+      [{_card, owner}] = State.battlefield_for_view(state, "p1", "p2")
+                         |> Enum.filter(fn {c, _} -> c["instance_id"] == "c1" end)
+      assert owner == "p1"
+    end
+  end
 end

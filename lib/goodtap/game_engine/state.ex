@@ -260,6 +260,27 @@ defmodule Goodtap.GameEngine.State do
   end
 
   @doc """
+  Returns all battlefield cards visible to a viewer, as {card, owner_key} tuples.
+
+  A viewer sees all cards whose effective battlefield (on_battlefield field, or owner
+  if absent) equals either my_role or viewed_opponent. Orientation is determined by
+  the caller: render upright if owner_key == my_role, flipped otherwise.
+  """
+  def battlefield_for_view(game_state, my_role, viewed_opponent) do
+    all_player_keys(game_state)
+    |> Enum.flat_map(fn owner_key ->
+      game_state
+      |> get_in([owner_key, "zones", "battlefield"])
+      |> Kernel.||([])
+      |> Enum.filter(fn card ->
+        effective_bf = card["on_battlefield"] || owner_key
+        effective_bf == my_role or effective_bf == viewed_opponent
+      end)
+      |> Enum.map(&{&1, owner_key})
+    end)
+  end
+
+  @doc """
   Determine the display image URL for a card given viewer perspective.
   """
   def card_display_url(card_instance, viewer_role, owner_role, zone) do

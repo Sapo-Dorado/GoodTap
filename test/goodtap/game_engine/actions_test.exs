@@ -520,4 +520,87 @@ defmodule Goodtap.GameEngine.ActionsTest do
       assert Enum.max(all_z) <= 18  # at most 17 cards + 1
     end
   end
+
+  # ─── on_battlefield field ─────────────────────────────────────────────────
+
+  describe "move_to_player_battlefield/7" do
+    test "sets on_battlefield when placing on opponent" do
+      c = card(%{"instance_id" => "c1"})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+
+      {:ok, new_state} = Actions.move_to_player_battlefield(state, "p1", "p2", "c1", "hand", 0.3, 0.2)
+      [placed] = cards_in(new_state, "p1", "battlefield")
+      assert placed["on_battlefield"] == "p2"
+      assert placed["x"] == 0.3
+      assert placed["y"] == 0.2
+    end
+
+    test "card stays in source player's zone" do
+      c = card(%{"instance_id" => "c1"})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+
+      {:ok, new_state} = Actions.move_to_player_battlefield(state, "p1", "p2", "c1", "hand", 0.3, 0.2)
+      assert cards_in(new_state, "p2", "battlefield") == []
+      assert length(cards_in(new_state, "p1", "battlefield")) == 1
+    end
+
+    test "placing on own side clears on_battlefield" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+
+      {:ok, new_state} = Actions.move_to_player_battlefield(state, "p1", "p1", "c1", "battlefield", 0.5, 0.8)
+      [moved] = cards_in(new_state, "p1", "battlefield")
+      refute Map.has_key?(moved, "on_battlefield")
+    end
+
+    test "card becomes known to all players" do
+      c = card(%{"instance_id" => "c1"})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+
+      {:ok, new_state} = Actions.move_to_player_battlefield(state, "p1", "p2", "c1", "hand", 0.3, 0.2)
+      [placed] = cards_in(new_state, "p1", "battlefield")
+      assert State.known_to?(placed, "p1")
+      assert State.known_to?(placed, "p2")
+    end
+  end
+
+  describe "update_battlefield_position/6 with target_player" do
+    test "nil target_player preserves existing on_battlefield" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+
+      {:ok, new_state} = Actions.update_battlefield_position(state, "p1", "c1", 0.4, 0.3)
+      [moved] = cards_in(new_state, "p1", "battlefield")
+      assert moved["on_battlefield"] == "p2"
+    end
+
+    test "target_player == player clears on_battlefield (drag back to own side)" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+
+      {:ok, new_state} = Actions.update_battlefield_position(state, "p1", "c1", 0.5, 0.8, "p1")
+      [moved] = cards_in(new_state, "p1", "battlefield")
+      refute Map.has_key?(moved, "on_battlefield")
+    end
+
+    test "target_player == opponent sets on_battlefield" do
+      c = card(%{"instance_id" => "c1"})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+
+      {:ok, new_state} = Actions.update_battlefield_position(state, "p1", "c1", 0.3, 0.2, "p2")
+      [moved] = cards_in(new_state, "p1", "battlefield")
+      assert moved["on_battlefield"] == "p2"
+    end
+  end
+
+  describe "move_to_battlefield/7 clears on_battlefield" do
+    test "move to battlefield always clears on_battlefield" do
+      c = card(%{"instance_id" => "c1", "on_battlefield" => "p2"})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+
+      {:ok, new_state} = Actions.move_to_battlefield(state, "p1", "c1", "hand", 0.5, 0.8)
+      [moved] = cards_in(new_state, "p1", "battlefield")
+      refute Map.has_key?(moved, "on_battlefield")
+    end
+  end
 end

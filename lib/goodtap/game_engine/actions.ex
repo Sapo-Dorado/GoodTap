@@ -174,6 +174,7 @@ defmodule Goodtap.GameEngine.Actions do
         |> Map.put("x", fx)
         |> Map.put("y", fy)
         |> Map.put("z", z)
+        |> Map.delete("on_battlefield")
 
       card = if card["is_face_down"], do: card, else: mark_known_to_both(card, state)
 
@@ -181,10 +182,43 @@ defmodule Goodtap.GameEngine.Actions do
     end
   end
 
-  def update_battlefield_position(state, player, instance_id, x, y) do
+  # Move a card to the battlefield, visually associating it with target_player's side.
+  # The card stays in source_player's zone; on_battlefield is set to target_player.
+  # When target_player == source_player, behaves like move_to_battlefield (own side).
+  def move_to_player_battlefield(state, source_player, target_player, instance_id, source_zone, x, y) do
+    with {:ok, {card, state}} <- remove_from_zone(state, source_player, source_zone, instance_id) do
+      {state, z} = next_z(state)
+      card =
+        card
+        |> Map.put("tapped", false)
+        |> Map.put("x", x)
+        |> Map.put("y", y)
+        |> Map.put("z", z)
+        |> mark_known_to_both(state)
+        |> then(fn c ->
+          if target_player == source_player,
+            do: Map.delete(c, "on_battlefield"),
+            else: Map.put(c, "on_battlefield", target_player)
+        end)
+
+      {:ok, append_to_zone(state, source_player, "battlefield", card)}
+    end
+  end
+
+  def update_battlefield_position(state, player, instance_id, x, y, target_player \\ nil) do
     {state, z} = next_z(state)
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
-      card |> Map.put("x", x) |> Map.put("y", y) |> Map.put("z", z)
+      card
+      |> Map.put("x", x)
+      |> Map.put("y", y)
+      |> Map.put("z", z)
+      |> then(fn c ->
+        cond do
+          target_player == nil -> c
+          target_player == player -> Map.delete(c, "on_battlefield")
+          true -> Map.put(c, "on_battlefield", target_player)
+        end
+      end)
     end)
   end
 

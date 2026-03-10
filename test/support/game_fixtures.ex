@@ -57,6 +57,16 @@ defmodule Goodtap.GameFixtures do
     )
   end
 
+  # Builds a 3-player game state with "p1", "p2", "p3" as player keys.
+  def game_state_3p(p1_attrs \\ %{}, p2_attrs \\ %{}, p3_attrs \\ %{}) do
+    %{
+      "p1" => player_state(p1_attrs),
+      "p2" => player_state(p2_attrs),
+      "p3" => player_state(p3_attrs),
+      "z_counter" => 0
+    }
+  end
+
   # Build a game state with N cards in a zone for the given player.
   def with_cards_in(state, player, zone, cards) do
     put_in(state, [player, "zones", zone], cards)

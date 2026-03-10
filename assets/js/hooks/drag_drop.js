@@ -474,15 +474,25 @@ const DragDrop = {
         // tokens → hand (server silently drops them), and find-mode reorders.
 
         if (isBattlefield && zone === "battlefield") {
-          // ── Battlefield reposition (staying on my side) ──
-          card.style.left = Math.trunc(relX * 100) + "%";
-          card.style.top = Math.trunc(relY * 100) + "%";
+          // ── Battlefield reposition ──
+          // Only do optimistic positioning if staying on the same side (target == owner).
+          // If moving to opponent's side, the element id will change (card-* → opp-card-*)
+          // so we let the server re-render handle it.
+          const bf = document.getElementById("battlefield");
+          const bfRect2 = bf ? bf.getBoundingClientRect() : null;
+          const inMyHalf2 = bfRect2 && e.clientY >= bfRect2.top + bfRect2.height / 2;
+          const stayingOnOwnSide = inMyHalf2 && card.id.startsWith("card-");
+
+          if (stayingOnOwnSide) {
+            card.style.left = Math.trunc(relX * 100) + "%";
+            card.style.top = Math.trunc(relY * 100) + "%";
+          }
           card.style.zIndex = nextLocalZ();
           card.style.opacity = ""; card.style.pointerEvents = "";
           this.draggedEl = null;
 
-          // Reposition other selected cards by the same delta
-          if (this.extraGhosts.length > 0) {
+          // Reposition other selected cards by the same delta (own side only)
+          if (this.extraGhosts.length > 0 && stayingOnOwnSide) {
             const origPrimaryXPct = (rect.left - zoneRect.left) / zoneRect.width;
             const origPrimaryYPct = (rect.top - zoneRect.top) / zoneRect.height;
             const dx = relX - origPrimaryXPct;
@@ -494,6 +504,10 @@ const DragDrop = {
               el.style.left = Math.trunc(nx * 100) + "%";
               el.style.top = Math.trunc(ny * 100) + "%";
               el.style.zIndex = nextLocalZ();
+              el.style.opacity = ""; el.style.pointerEvents = "";
+            }
+          } else {
+            for (const { el } of this.extraGhosts) {
               el.style.opacity = ""; el.style.pointerEvents = "";
             }
           }
@@ -530,9 +544,13 @@ const DragDrop = {
           // If isFind or insertIndex is null, draggedEl stays set; server re-render restores.
 
         } else if (isBattlefield && zone !== "battlefield") {
-          // ── Cross-zone → my battlefield ──
+          // ── Cross-zone → battlefield ──
+          // Only do optimistic rendering for own-side drops (bottom half).
+          // Opponent-half drops are left to the server to render correctly (flipped).
           const bf = document.getElementById("battlefield");
-          if (bf) {
+          const bfRect = bf ? bf.getBoundingClientRect() : null;
+          const inMyHalf = bfRect && e.clientY >= bfRect.top + bfRect.height / 2;
+          if (bf && inMyHalf) {
             const el = document.createElement("div");
             el.id = `card-${instanceId}`;
             el.className = "card-on-battlefield absolute cursor-pointer transition-transform";
@@ -585,11 +603,23 @@ const DragDrop = {
         // Collect selected instance ids for multi-card battlefield moves
         const selectedIds = [instanceId, ...this.extraGhosts.map(eg => eg.el.dataset.instanceId)];
 
+        // For battlefield drops, determine target_player based on which half was dropped into.
+        // Top half = opponent's battlefield, bottom half = my battlefield.
+        let targetPlayer = null;
+        if (isBattlefield) {
+          const bf = document.getElementById("battlefield");
+          const bfRect = bf ? bf.getBoundingClientRect() : dropInfo.el.getBoundingClientRect();
+          const inOpponentHalf = e.clientY < bfRect.top + bfRect.height / 2;
+          const viewedOpponent = bf ? bf.dataset.viewedOpponent : null;
+          targetPlayer = inOpponentHalf ? viewedOpponent : this.myRole;
+        }
+
         this.pushEvent("drag_end", {
           instance_id: instanceId,
           from_zone: zone,
           owner: owner,
           target_zone: dropInfo.zone,
+          target_player: targetPlayer,
           x: relX,
           y: relY,
           insert_index: insertIndex,

@@ -792,6 +792,7 @@ defmodule GoodtapWeb.GameLive do
     x = params["x"] || 0.1
     y = params["y"] || 0.5
     owner = params["owner"] || socket.assigns.my_role
+    target_player = params["target_player"]
     selected_ids = params["selected_instance_ids"] || []
 
     # Only allow moving your own cards
@@ -820,7 +821,7 @@ defmodule GoodtapWeb.GameLive do
                   if card do
                     nx = max(0.0, min(0.98, (card["x"] || 0.1) + dx))
                     ny = max(0.0, min(0.98, (card["y"] || 0.5) + dy))
-                    Actions.update_battlefield_position(st, player, sid, nx, ny)
+                    Actions.update_battlefield_position(st, player, sid, nx, ny, target_player)
                   else
                     {:ok, st}
                   end
@@ -830,7 +831,7 @@ defmodule GoodtapWeb.GameLive do
               end)
             else
               apply_action_inline(socket, fn state, player ->
-                Actions.update_battlefield_position(state, player, instance_id, x, y)
+                Actions.update_battlefield_position(state, player, instance_id, x, y, target_player)
               end)
             end
 
@@ -840,13 +841,13 @@ defmodule GoodtapWeb.GameLive do
               Actions.reorder_in_zone(state, player, zone, instance_id, insert_index || 0)
             end)
 
-          # Cross-zone moves — apply to all selected cards if multi
+          # Cross-zone moves to battlefield — use target_player to set on_battlefield
           {_, "battlefield"} ->
             all_ids = if length(selected_ids) > 1, do: selected_ids, else: [instance_id]
             apply_action_inline(socket, fn state, player ->
               {:ok, new_state} = Enum.reduce(all_ids, {:ok, state}, fn sid, {:ok, st} ->
                 src = find_card_zone(st, player, sid) || from_zone
-                Actions.move_to_battlefield(st, player, sid, src, x, y, false)
+                Actions.move_to_player_battlefield(st, player, target_player || player, sid, src, x, y)
               end) |> elem(1) |> then(&{:ok, &1})
               names = Enum.map(all_ids, &card_name_from_state(new_state, player, &1))
               {:ok, append_log(new_state, player, "#{Enum.join(names, ", ")} → battlefield")}
@@ -1404,6 +1405,7 @@ defmodule GoodtapWeb.GameLive do
       assigns
       |> assign(:my, my_state(assigns.game_state, assigns.my_role))
       |> assign(:opp, opp_state(assigns.game_state, assigns.viewed_opponent))
+      |> assign(:battlefield_cards, State.battlefield_for_view(assigns.game_state, assigns.my_role, assigns.viewed_opponent))
 
     ~H"""
     <div class="h-full flex overflow-hidden bg-gray-950 select-none">
@@ -1487,6 +1489,7 @@ defmodule GoodtapWeb.GameLive do
           class="relative w-full h-full overflow-hidden"
           data-drop-zone="battlefield"
           data-my-role={@my_role}
+          data-viewed-opponent={@viewed_opponent}
           data-move-keys={Hotkeys.move_keys_csv()}
           phx-hook="Battlefield"
           style="background: linear-gradient(to bottom, #111827 50%, #1a2332 50%);"
@@ -1507,81 +1510,54 @@ defmodule GoodtapWeb.GameLive do
             <span class="block w-4 h-0.5 bg-current rounded"></span>
           </button>
 
-          <%!-- Opponent's cards — mirrored using right/bottom so their (x,y) becomes our (right: x%, bottom: y%).
-               This means their card near their hand (y≈1, bottom of their screen) appears near the top of ours.
-               Cards are rotated 180° visually so the card text faces us.
-               NOTE: .opp-card-inner must remain a direct child of .card-on-battlefield —
-               the is-tapped CSS rule targets it for tap rotation (see app.css). --%>
-          <%= for card <- zone_cards(@opp, "battlefield") do %>
-            <%
-              opp_x = trunc((card["x"] || 0.5) * 100)
-              opp_y = trunc((card["y"] || 0.5) * 100)
-            %>
-            <div
-              id={"opp-card-#{card["instance_id"]}"}
-              class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "is-tapped", else: "")]}
-              style={"right: #{opp_x}%; bottom: #{opp_y}%; z-index: #{card["z"] || 1};"}
-              data-hoverable="true"
-              data-instance-id={card["instance_id"]}
-              data-zone="battlefield"
-              data-owner={@viewed_opponent}
-            >
-              <div class="opp-card-inner">
-                <div
-                  style="transform: rotate(180deg); transform-origin: center;"
-                  data-card-img={card_display_url(card, @my_role, @viewed_opponent, "battlefield")}
-                >
-                <div class="flex flex-col items-center">
+          <%!--
+            All battlefield cards — rendered from a unified list of {card, owner_key} tuples.
+
+            Orientation rule:
+              - Upright if owner_key == my_role (draggable)
+              - Flipped if owner_key != my_role AND effective_bf == owner_key
+                  (opponent's own card on their own battlefield)
+              - Upright, not interactable if owner_key != my_role AND effective_bf != owner_key
+                  (opponent's card placed on a different player's battlefield)
+
+            NOTE: .opp-card-inner must remain a direct child of .card-on-battlefield —
+            the is-tapped CSS rule in app.css targets `.card-on-battlefield.is-tapped .opp-card-inner`.
+          --%>
+          <%= for {card, owner_key} <- @battlefield_cards do %>
+            <% is_mine = owner_key == @my_role %>
+            <% effective_bf = card["on_battlefield"] || owner_key %>
+            <%# Flipped: opponent card on their own battlefield OR on my battlefield.
+                Upright-not-interactable only when an opponent's card is on a third player's battlefield. %>
+            <% flipped = not is_mine and (effective_bf == owner_key or effective_bf == @my_role) %>
+            <% cx = trunc((card["x"] || 0.5) * 100) %>
+            <% cy = trunc((card["y"] || 0.5) * 100) %>
+            <%= if is_mine do %>
+              <%!-- Upright + draggable: my own card --%>
+              <div
+                id={"card-#{card["instance_id"]}"}
+                class={[
+                  "card-on-battlefield absolute cursor-pointer transition-transform",
+                  if(card["tapped"], do: "is-tapped", else: ""),
+                  if(MapSet.member?(@selected_cards, card["instance_id"]), do: "is-selected", else: ""),
+                ]}
+                style={"left: #{cx}%; top: #{cy}%; z-index: #{card["z"] || 1};"}
+                data-draggable="true"
+                data-instance-id={card["instance_id"]}
+                data-zone="battlefield"
+                data-owner={@my_role}
+                data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
+                data-selected={if MapSet.member?(@selected_cards, card["instance_id"]), do: "true", else: "false"}
+                data-is-token={if card["is_token"], do: "true", else: "false"}
+              >
+                <div class="card-draggable">
                   <img
-                    src={card_display_url(card, @my_role, @viewed_opponent, "battlefield")}
+                    src={card_display_url(card, @my_role, @my_role, "battlefield")}
                     class="card-image rounded shadow-lg"
                     draggable="false"
                   />
-                  <%= if (card["counters"] || []) != [] do %>
-                    <div class="flex flex-col gap-0.5 mt-0.5 items-center">
-                      <%= for counter <- card["counters"] || [] do %>
-                        <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight w-full">
-                          <span class="font-mono text-sm font-bold">{counter["value"]}</span>
-                          <span class="text-xs text-gray-300 text-center">{counter["name"]}</span>
-                        </div>
-                      <% end %>
-                    </div>
-                  <% end %>
                 </div>
-                </div>
-              </div>
-            </div>
-          <% end %>
-
-          <%!-- My cards — rendered at their (x, y) position, upright --%>
-          <%= for card <- zone_cards(@my, "battlefield") do %>
-            <div
-              id={"card-#{card["instance_id"]}"}
-              class={[
-                "card-on-battlefield absolute cursor-pointer transition-transform",
-                if(card["tapped"], do: "is-tapped", else: ""),
-                if(MapSet.member?(@selected_cards, card["instance_id"]), do: "is-selected", else: ""),
-              ]}
-              style={"left: #{trunc((card["x"] || 0.1) * 100)}%; top: #{trunc((card["y"] || 0.1) * 100)}%; z-index: #{card["z"] || 1};"}
-              data-draggable="true"
-              data-instance-id={card["instance_id"]}
-              data-zone="battlefield"
-              data-owner={@my_role}
-              data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
-              data-selected={if MapSet.member?(@selected_cards, card["instance_id"]), do: "true", else: "false"}
-              data-is-token={if card["is_token"], do: "true", else: "false"}
-            >
-              <%!-- Card image with hover highlight --%>
-              <div class="card-draggable">
-                <img
-                  src={card_display_url(card, @my_role, @my_role, "battlefield")}
-                  class="card-image rounded shadow-lg"
-                  draggable="false"
-                />
-              </div>
-
-              <%!-- Counters: absolutely positioned below card, not affecting card dimensions --%>
-              <div :if={(card["counters"] || []) != []} class="absolute left-0 right-0 flex flex-col gap-0.5 items-center" style="top: 100%; margin-top: 2px;" data-no-hotkey>
+                <%!-- Counters --%>
+                <div :if={(card["counters"] || []) != []} class="absolute left-0 right-0 flex flex-col gap-0.5 items-center" style="top: 100%; margin-top: 2px;" data-no-hotkey>
                   <%= for {counter, cidx} <- Enum.with_index(card["counters"] || []) do %>
                     <div class="relative group/counter">
                       <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight">
@@ -1615,7 +1591,74 @@ defmodule GoodtapWeb.GameLive do
                     </div>
                   <% end %>
                 </div>
-            </div>
+              </div>
+            <% else %>
+            <%= if flipped do %>
+              <%!-- Flipped: opponent's own card on their own battlefield (right/bottom, rotate 180°) --%>
+              <div
+                id={"opp-card-#{card["instance_id"]}"}
+                class={["card-on-battlefield absolute cursor-pointer", if(card["tapped"], do: "is-tapped", else: "")]}
+                style={"right: #{cx}%; bottom: #{cy}%; z-index: #{card["z"] || 1};"}
+                data-hoverable="true"
+                data-instance-id={card["instance_id"]}
+                data-zone="battlefield"
+                data-owner={owner_key}
+              >
+                <div class="opp-card-inner">
+                  <div
+                    style="transform: rotate(180deg); transform-origin: center;"
+                    data-card-img={card_display_url(card, @my_role, owner_key, "battlefield")}
+                  >
+                    <div class="flex flex-col items-center">
+                      <img
+                        src={card_display_url(card, @my_role, owner_key, "battlefield")}
+                        class="card-image rounded shadow-lg"
+                        draggable="false"
+                      />
+                      <%= if (card["counters"] || []) != [] do %>
+                        <div class="flex flex-col gap-0.5 mt-0.5 items-center">
+                          <%= for counter <- card["counters"] || [] do %>
+                            <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight w-full">
+                              <span class="font-mono text-sm font-bold">{counter["value"]}</span>
+                              <span class="text-xs text-gray-300 text-center">{counter["name"]}</span>
+                            </div>
+                          <% end %>
+                        </div>
+                      <% end %>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% else %>
+              <%!-- Upright, not interactable: opponent's card on a third player's battlefield --%>
+              <div
+                id={"opp-card-#{card["instance_id"]}"}
+                class={["card-on-battlefield absolute cursor-default", if(card["tapped"], do: "is-tapped", else: "")]}
+                style={"left: #{cx}%; top: #{cy}%; z-index: #{card["z"] || 1};"}
+                data-instance-id={card["instance_id"]}
+                data-zone="battlefield"
+                data-owner={owner_key}
+              >
+                <div>
+                  <img
+                    src={card_display_url(card, @my_role, owner_key, "battlefield")}
+                    class="card-image rounded shadow-lg"
+                    draggable="false"
+                  />
+                </div>
+                <%= if (card["counters"] || []) != [] do %>
+                  <div class="flex flex-col gap-0.5 mt-0.5 items-center">
+                    <%= for counter <- card["counters"] || [] do %>
+                      <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight w-full">
+                        <span class="font-mono text-sm font-bold">{counter["value"]}</span>
+                        <span class="text-xs text-gray-300 text-center">{counter["name"]}</span>
+                      </div>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+            <% end %>
           <% end %>
 
           <%!-- Opponent zone piles — mirrored from their layout (their bottom-right = our top-left, etc.) --%>
