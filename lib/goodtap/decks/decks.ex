@@ -24,7 +24,7 @@ defmodule Goodtap.Decks do
   defp insert_deck_cards(deck, card_list) do
     card_lookup = Catalog.find_cards_for_deck(card_list)
 
-    {not_found, to_insert} =
+    {not_found, to_insert_raw} =
       Enum.reduce(card_list, {[], []}, fn entry, {nf, ins} ->
         case Map.get(card_lookup, entry.name) do
           {nil, _} -> {[entry.name | nf], ins}
@@ -38,6 +38,14 @@ defmodule Goodtap.Decks do
             }
             {nf, [row | ins]}
         end
+      end)
+
+    # Merge duplicate {card_name, board} entries (e.g. "1 Foo\n1 Foo" → quantity 2)
+    to_insert =
+      to_insert_raw
+      |> Enum.group_by(fn row -> {row.card_name, row.board} end)
+      |> Enum.map(fn {_, [first | rest]} ->
+        Enum.reduce(rest, first, fn row, acc -> %{acc | quantity: acc.quantity + row.quantity} end)
       end)
 
     Repo.insert_all(DeckCard, to_insert,
