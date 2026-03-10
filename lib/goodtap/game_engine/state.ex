@@ -5,51 +5,54 @@ defmodule Goodtap.GameEngine.State do
   @double_faced_layouts ["transform", "modal_dfc", "double_faced_token", "reversible_card"]
 
   @doc """
-  Initialize full game state when both players have selected decks.
+  Initialize full game state when all players have selected decks.
+  players_with_keys is a list of {player_key, user} tuples (e.g. [{"p1", host}, {"p2", opp}]).
+  deck_id_map is %{"p1" => deck_id, "p2" => deck_id, ...}.
   Returns the game_state map ready to be stored in the Game record.
   """
-  def initialize(host, opponent, host_deck_id, opponent_deck_id, opts \\ []) do
-    host_state = build_player_state(host, host_deck_id, "host")
-    opponent_state = build_player_state(opponent, opponent_deck_id, "opponent")
-    build_game_state(host_state, opponent_state, opts)
+  def initialize(players_with_keys, deck_id_map, opts \\ []) do
+    player_states =
+      Map.new(players_with_keys, fn {key, user} ->
+        {key, build_player_state(user, deck_id_map[key], key)}
+      end)
+
+    build_game_state(player_states, opts)
   end
 
   @doc """
-  Initialize game state with explicit card name lists (used for sideboard restarts
-  so the underlying deck in the DB is never modified).
-  card_specs is %{"host" => {card_names, commander_name, deck_id}, "opponent" => ...}
+  Initialize game state with explicit card name lists (used for sideboard restarts).
+  card_specs is %{"p1" => {card_names, commander_names, deck_id}, "p2" => ...}
   """
-  def initialize_with_card_lists(host, opponent, card_specs, opts \\ []) do
-    host_state = build_player_state_from_names(host, card_specs["host"], "host")
-    opponent_state = build_player_state_from_names(opponent, card_specs["opponent"], "opponent")
-    build_game_state(host_state, opponent_state, opts)
+  def initialize_with_card_lists(players_with_keys, card_specs, opts \\ []) do
+    player_states =
+      Map.new(players_with_keys, fn {key, user} ->
+        {key, build_player_state_from_names(user, card_specs[key], key)}
+      end)
+
+    build_game_state(player_states, opts)
   end
 
-  defp build_game_state(host_state, opponent_state, opts) do
-    base = %{"host" => host_state, "opponent" => opponent_state}
+  defp build_game_state(player_states, opts) do
+    player_keys = Map.keys(player_states) |> Enum.sort()
 
     if Keyword.get(opts, :roll_die, true) do
-      host_dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
-      opponent_dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
-      host_total = Enum.sum(host_dice)
-      opp_total = Enum.sum(opponent_dice)
-      host_name = get_in(base, ["host", "username"]) || "host"
-      opp_name = get_in(base, ["opponent", "username"]) || "opponent"
       t = System.system_time(:second)
-      log = [
-        %{"t" => t, "p" => "opponent", "u" => opp_name, "m" => "rolled a #{opp_total}"},
-        %{"t" => t, "p" => "host", "u" => host_name, "m" => "rolled a #{host_total}"}
-      ]
-      base
-      |> Map.put("die_roll", %{
-        "host" => host_total,
-        "host_dice" => host_dice,
-        "opponent" => opp_total,
-        "opponent_dice" => opponent_dice
-      })
+
+      {die_roll, log} =
+        Enum.reduce(player_keys, {%{}, []}, fn key, {roll_acc, log_acc} ->
+          dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
+          total = Enum.sum(dice)
+          username = get_in(player_states, [key, "username"]) || key
+          entry = %{"t" => t, "p" => key, "u" => username, "m" => "rolled a #{total}"}
+          roll = Map.put(roll_acc, key, total) |> Map.put("#{key}_dice", dice)
+          {roll, [entry | log_acc]}
+        end)
+
+      player_states
+      |> Map.put("die_roll", die_roll)
       |> Map.put("log", log)
     else
-      base
+      player_states
     end
   end
 
@@ -73,7 +76,7 @@ defmodule Goodtap.GameEngine.State do
       |> Enum.shuffle()
 
     {hand_raw, deck} = Enum.split(instances, 7)
-    hand = Enum.map(hand_raw, &Map.put(&1, "known", %{"host" => role == "host", "opponent" => role == "opponent"}))
+    hand = Enum.map(hand_raw, &Map.put(&1, "known", %{role => true}))
 
     battlefield =
       commander_names
@@ -130,7 +133,7 @@ defmodule Goodtap.GameEngine.State do
       |> Enum.shuffle()
 
     {hand_raw, deck} = Enum.split(instances, 7)
-    hand = Enum.map(hand_raw, &Map.put(&1, "known", %{"host" => role == "host", "opponent" => role == "opponent"}))
+    hand = Enum.map(hand_raw, &Map.put(&1, "known", %{role => true}))
 
     # Place all starts-in-play cards on battlefield
     battlefield =
@@ -179,7 +182,7 @@ defmodule Goodtap.GameEngine.State do
       "image_uris" => image_uris,
       "counters" => [],
       "tapped" => false,
-      "known" => %{"host" => false, "opponent" => false}
+      "known" => %{}
     }
   end
 
@@ -195,7 +198,6 @@ defmodule Goodtap.GameEngine.State do
     case Enum.find(card.printings, &(&1["id"] == printing_id)) do
       nil -> nil
       printing ->
-        # Printing stores front image_uris; for DFC, get back from card.data
         front = get_in(printing, ["image_uris", "normal"])
         back = get_in(card.data, ["card_faces", Access.at(1), "image_uris", "normal"])
         %{"front" => front, "back" => back}
@@ -232,15 +234,22 @@ defmodule Goodtap.GameEngine.State do
 
   @doc """
   Returns true if the card is known to the given role.
-  Handles both the old boolean format and the new per-player map format.
   """
   def known_to?(card, role) do
     case card["known"] do
-      true -> true
-      false -> false
-      nil -> false
       map when is_map(map) -> map[role] == true
+      _ -> false
     end
+  end
+
+  @doc """
+  Returns all player keys present in a game state (top-level keys starting with "p").
+  """
+  def all_player_keys(state) do
+    state
+    |> Map.keys()
+    |> Enum.filter(&String.starts_with?(&1, "p"))
+    |> Enum.sort()
   end
 
   @doc """

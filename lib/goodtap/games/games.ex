@@ -1,55 +1,101 @@
 defmodule Goodtap.Games do
   import Ecto.Query, warn: false
   alias Goodtap.Repo
-  alias Goodtap.Games.Game
+  alias Goodtap.Games.{Game, GamePlayer}
 
   def list_active_games_for_user(user_id) do
     Game
+    |> join(:inner, [g], gp in GamePlayer, on: gp.game_id == g.id)
+    |> where([g, gp], gp.user_id == ^user_id)
     |> where([g], g.status != "ended")
-    |> where([g], g.host_id == ^user_id or g.opponent_id == ^user_id)
     |> order_by([g], desc: g.inserted_at)
-    |> preload([:host, :opponent])
+    |> preload([:host, game_players: :user])
     |> Repo.all()
   end
 
-  def get_game!(id), do: Repo.get!(Game, id) |> Repo.preload([:host, :opponent])
+  def get_game!(id) do
+    Repo.get!(Game, id) |> Repo.preload([:host, game_players: :user])
+  end
 
   def get_game(id) do
     case Repo.get(Game, id) do
       nil -> nil
-      game -> Repo.preload(game, [:host, :opponent])
+      game -> Repo.preload(game, [:host, game_players: :user])
     end
   end
 
-  def create_game(host) do
+  def create_game(host, opts \\ []) do
+    max_players = Keyword.get(opts, :max_players, 2)
     id = generate_id()
 
-    %Game{}
-    |> Game.changeset(%{
-      id: id,
-      host_id: host.id,
-      status: "waiting",
-      game_state: %{"host_deck_id" => nil, "opponent_deck_id" => nil}
-    })
-    |> Repo.insert()
+    Repo.transaction(fn ->
+      game =
+        %Game{}
+        |> Game.changeset(%{
+          id: id,
+          host_id: host.id,
+          status: "waiting",
+          max_players: max_players,
+          game_state: %{"deck_ids" => %{"p1" => nil}}
+        })
+        |> Repo.insert!()
+
+      %GamePlayer{}
+      |> GamePlayer.changeset(%{game_id: id, user_id: host.id, player_key: "p1"})
+      |> Repo.insert!()
+
+      Repo.preload(game, [:host, game_players: :user])
+    end)
   end
 
-  def join_game(game, opponent) do
-    game
-    |> Game.changeset(%{opponent_id: opponent.id, status: "setup"})
-    |> Repo.update()
+  # Adds a user to the game as the next available player key.
+  # Returns {:ok, game, player_key} or {:error, :full} if the game is at capacity.
+  def join_game(game, user) do
+    existing_keys =
+      game.game_players
+      |> Enum.map(& &1.player_key)
+      |> MapSet.new()
+
+    # Already joined?
+    if Enum.any?(game.game_players, &(&1.user_id == user.id)) do
+      player_key = Enum.find(game.game_players, &(&1.user_id == user.id)).player_key
+      {:ok, game, player_key}
+    else
+      next_key =
+        1..game.max_players
+        |> Enum.map(&"p#{&1}")
+        |> Enum.find(&(&1 not in existing_keys))
+
+      if next_key do
+        Repo.transaction(fn ->
+          %GamePlayer{}
+          |> GamePlayer.changeset(%{game_id: game.id, user_id: user.id, player_key: next_key})
+          |> Repo.insert!()
+
+          new_deck_ids = Map.put(get_in(game.game_state, ["deck_ids"]) || %{}, next_key, nil)
+          new_state = Map.put(game.game_state || %{}, "deck_ids", new_deck_ids)
+
+          updated =
+            game
+            |> Game.changeset(%{game_state: new_state, status: "setup"})
+            |> Repo.update!()
+            |> Repo.preload([:host, game_players: :user])
+
+          {updated, next_key}
+        end)
+        |> case do
+          {:ok, {game, key}} -> {:ok, game, key}
+          {:error, reason} -> {:error, reason}
+        end
+      else
+        {:error, :full}
+      end
+    end
   end
 
-  def set_host_deck(game, deck_id) do
-    new_state = Map.put(game.game_state || %{}, "host_deck_id", deck_id)
-
-    game
-    |> Game.changeset(%{game_state: new_state})
-    |> Repo.update()
-  end
-
-  def set_opponent_deck(game, deck_id) do
-    new_state = Map.put(game.game_state || %{}, "opponent_deck_id", deck_id)
+  def set_player_deck(game, player_key, deck_id) do
+    existing = get_in(game.game_state, ["deck_ids"]) || %{}
+    new_state = Map.put(game.game_state, "deck_ids", Map.put(existing, player_key, deck_id))
 
     game
     |> Game.changeset(%{game_state: new_state})
@@ -76,21 +122,36 @@ defmodule Goodtap.Games do
     Repo.delete(game)
   end
 
-  # Begin sideboarding phase: store current state in game_state for restart
+  # Returns {:start, game} when all players have selected decks, {:wait, game} otherwise.
+  def maybe_start_game(game) do
+    deck_ids = get_in(game.game_state, ["deck_ids"]) || %{}
+    player_keys = Enum.map(game.game_players, & &1.player_key)
+    all_have_decks = length(player_keys) == game.max_players &&
+      Enum.all?(player_keys, &(Map.get(deck_ids, &1) != nil))
+
+    if all_have_decks do
+      {:start, game}
+    else
+      {:wait, game}
+    end
+  end
+
+  # Begin sideboarding phase: reset sideboard_ready for all players.
   def start_sideboarding(game) do
+    player_keys = Enum.map(game.game_players, & &1.player_key)
+    sideboard_ready = Map.new(player_keys, &{&1, false})
+
     new_state =
       (game.game_state || %{})
-      |> Map.put("sideboard_ready", %{"host" => false, "opponent" => false})
+      |> Map.put("sideboard_ready", sideboard_ready)
 
     game
     |> Game.changeset(%{game_state: new_state, status: "sideboarding"})
     |> Repo.update()
   end
 
-  # Mark a player as ready and store their resolved card list (from in-memory sideboard edits).
-  # card_spec is {card_names, commander_name, deck_id}.
-  # Reloads from DB first to avoid overwriting the other player's data.
-  def submit_sideboard_with_card_list(game, player_role, {card_names, commander_names, deck_id}) do
+  # Mark a player as ready with their resolved card list.
+  def submit_sideboard_with_card_list(game, player_key, {card_names, commander_names, deck_id}) do
     fresh = get_game!(game.id)
     state = fresh.game_state || %{}
     ready = Map.get(state, "sideboard_ready", %{})
@@ -98,8 +159,8 @@ defmodule Goodtap.Games do
 
     new_state =
       state
-      |> Map.put("sideboard_ready", Map.put(ready, player_role, true))
-      |> Map.put("sideboard_card_lists", Map.put(card_lists, player_role, %{
+      |> Map.put("sideboard_ready", Map.put(ready, player_key, true))
+      |> Map.put("sideboard_card_lists", Map.put(card_lists, player_key, %{
         "card_names" => card_names,
         "commander_names" => commander_names,
         "deck_id" => deck_id
@@ -110,25 +171,10 @@ defmodule Goodtap.Games do
     |> Repo.update()
   end
 
-  def both_sideboard_ready?(game) do
+  def all_sideboard_ready?(game) do
     ready = get_in(game.game_state, ["sideboard_ready"]) || %{}
-    Map.get(ready, "host") == true && Map.get(ready, "opponent") == true
-  end
-
-  def maybe_start_game(game) do
-    state = game.game_state || %{}
-    host_deck = state["host_deck_id"]
-    opponent_deck = state["opponent_deck_id"]
-
-    if host_deck && opponent_deck && game.opponent_id do
-      {:start, game}
-    else
-      {:wait, game}
-    end
-  end
-
-  defp generate_id do
-    :crypto.strong_rand_bytes(12) |> Base.url_encode64(padding: false)
+    player_keys = Enum.map(game.game_players, & &1.player_key)
+    length(player_keys) > 0 && Enum.all?(player_keys, &(Map.get(ready, &1) == true))
   end
 
   def broadcast_game_update(game) do
@@ -165,5 +211,24 @@ defmodule Goodtap.Games do
 
   def subscribe_to_game(game_id) do
     Phoenix.PubSub.subscribe(Goodtap.PubSub, "game:#{game_id}")
+  end
+
+  # Helper: return the player_key for a given user in this game, or nil.
+  def player_key_for(game, user_id) do
+    case Enum.find(game.game_players, &(&1.user_id == user_id)) do
+      nil -> nil
+      gp -> gp.player_key
+    end
+  end
+
+  # Helper: return all player keys in join order.
+  def player_keys(game) do
+    game.game_players
+    |> Enum.sort_by(& &1.player_key)
+    |> Enum.map(& &1.player_key)
+  end
+
+  defp generate_id do
+    :crypto.strong_rand_bytes(12) |> Base.url_encode64(padding: false)
   end
 end
