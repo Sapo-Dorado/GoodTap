@@ -1475,10 +1475,11 @@ defmodule GoodtapWeb.GameLive do
               data-zone="battlefield"
               data-owner={@opp_role}
             >
-              <div
-                style="transform: rotate(180deg); transform-origin: center;"
-                data-card-img={card_display_url(card, @my_role, @opp_role, "battlefield")}
-              >
+              <div class="opp-card-inner">
+                <div
+                  style="transform: rotate(180deg); transform-origin: center;"
+                  data-card-img={card_display_url(card, @my_role, @opp_role, "battlefield")}
+                >
                 <div class="flex flex-col items-center">
                   <img
                     src={card_display_url(card, @my_role, @opp_role, "battlefield")}
@@ -1495,6 +1496,7 @@ defmodule GoodtapWeb.GameLive do
                       <% end %>
                     </div>
                   <% end %>
+                </div>
                 </div>
               </div>
             </div>
