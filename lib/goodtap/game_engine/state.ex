@@ -32,8 +32,15 @@ defmodule Goodtap.GameEngine.State do
     build_game_state(player_states, opts)
   end
 
+  def starting_life(player_count) when player_count > 2, do: 40
+  def starting_life(_), do: 20
+
   defp build_game_state(player_states, opts) do
     player_keys = Map.keys(player_states) |> Enum.sort()
+    life = starting_life(length(player_keys))
+
+    player_states =
+      Map.new(player_states, fn {key, state} -> {key, Map.put(state, "life", life)} end)
 
     if Keyword.get(opts, :roll_die, true) do
       t = System.system_time(:second)

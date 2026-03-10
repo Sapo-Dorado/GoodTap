@@ -101,4 +101,18 @@ defmodule Goodtap.GameEngine.StateTest do
       assert State.card_display_url(c, "p1", "p1", "deck") == @front_url
     end
   end
+
+  describe "starting_life/1" do
+    test "2-player game starts with 20 life" do
+      assert State.starting_life(2) == 20
+    end
+
+    test "3-player game starts with 40 life" do
+      assert State.starting_life(3) == 40
+    end
+
+    test "4-player game starts with 40 life" do
+      assert State.starting_life(4) == 40
+    end
+  end
 end
