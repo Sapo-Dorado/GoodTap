@@ -134,6 +134,7 @@ defmodule GoodtapWeb.DeckLive do
   defp group_by_board(deck_cards) do
     deck_cards
     |> Enum.group_by(& &1.board)
+    |> Map.put_new("main", [])
     |> Enum.sort_by(fn {board, _} ->
       case board do
         "commander" -> 0
