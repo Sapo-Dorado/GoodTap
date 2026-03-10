@@ -1422,10 +1422,10 @@ defmodule GoodtapWeb.GameLive do
               phx-click="set_viewed_opponent"
               phx-value-player_key={opp_key}
               class={[
-                "flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-colors shrink-0",
+                "flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-colors shrink-0 border",
                 if(@viewed_opponent == opp_key,
-                  do: "bg-blue-700 text-white",
-                  else: "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  do: "bg-blue-700 text-white border-blue-500",
+                  else: "bg-gray-800 text-gray-300 hover:bg-gray-700 border-gray-600"
                 )
               ]}
             >
