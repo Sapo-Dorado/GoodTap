@@ -12,14 +12,15 @@ defmodule GoodtapWeb.GameListLive do
     {:ok, assign(socket, games: games, page_title: "My Games", confirm_delete: nil)}
   end
 
-  def handle_event("new_game", _params, socket) do
+  def handle_event("new_game", params, socket) do
     user = socket.assigns.current_scope.user
     games = socket.assigns.games
+    max_players = String.to_integer(params["max_players"] || "2")
 
     if length(games) >= @game_limit do
       {:noreply, put_flash(socket, :error, "You can have at most #{@game_limit} active games.")}
     else
-      case Games.create_game(user) do
+      case Games.create_game(user, max_players: max_players) do
         {:ok, game} ->
           {:noreply, push_navigate(socket, to: ~p"/games/#{game.id}/setup")}
 
@@ -41,7 +42,7 @@ defmodule GoodtapWeb.GameListLive do
     user = socket.assigns.current_scope.user
     game = Games.get_game!(id)
 
-    if game.host_id == user.id || game.opponent_id == user.id do
+    if Goodtap.Games.player_key_for(game, user.id) != nil do
       {:ok, _} = Games.delete_game(game)
       games = Enum.reject(socket.assigns.games, &(&1.id == id))
       {:noreply, assign(socket, games: games, confirm_delete: nil)}
@@ -74,9 +75,18 @@ defmodule GoodtapWeb.GameListLive do
             You can have at most 10 active games
           </div>
         <% else %>
-          <button phx-click="new_game" class="btn btn-primary">
-            + New Game
-          </button>
+          <form phx-submit="new_game" class="flex items-center gap-2">
+            <select name="max_players" class="select select-sm bg-gray-700 border-gray-600">
+              <option value="2">2 players</option>
+              <option value="3">3 players</option>
+              <option value="4">4 players</option>
+              <option value="5">5 players</option>
+              <option value="6">6 players</option>
+            </select>
+            <button type="submit" class="btn btn-primary">
+              + New Game
+            </button>
+          </form>
         <% end %>
       </div>
 
@@ -90,14 +100,12 @@ defmodule GoodtapWeb.GameListLive do
           <div class="bg-gray-800 rounded-lg p-4 flex items-center justify-between">
             <div>
               <div class="font-medium">
-                Game vs
+                <% others = Enum.reject(game.game_players, &(&1.user_id == @current_scope.user.id)) %>
                 <%= cond do %>
-                  <% game.host.id == @current_scope.user.id && game.opponent -> %>
-                    {game.opponent.username}
-                  <% game.host.id == @current_scope.user.id -> %>
-                    <span class="text-yellow-400">Waiting for opponent...</span>
+                  <% others != [] -> %>
+                    Game vs {Enum.map_join(others, ", ", & &1.user.username)}
                   <% true -> %>
-                    {game.host.username}
+                    <span class="text-yellow-400">Waiting for players... ({length(game.game_players)}/{game.max_players})</span>
                 <% end %>
               </div>
               <div class="text-sm text-gray-400 mt-1">

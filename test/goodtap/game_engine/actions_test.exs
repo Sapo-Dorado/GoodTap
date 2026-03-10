@@ -11,12 +11,13 @@ defmodule Goodtap.GameEngine.ActionsTest do
     get_in(state, [player, "zones", zone]) || []
   end
 
+  # In a 2-player game_state (p1/p2), "known to both" means both p1 and p2 know it.
   defp known_to_both?(card) do
-    State.known_to?(card, "host") and State.known_to?(card, "opponent")
+    State.known_to?(card, "p1") and State.known_to?(card, "p2")
   end
 
   defp known_to_neither?(card) do
-    not State.known_to?(card, "host") and not State.known_to?(card, "opponent")
+    not State.known_to?(card, "p1") and not State.known_to?(card, "p2")
   end
 
   # ─── Move to Graveyard ────────────────────────────────────────────────────
@@ -24,9 +25,9 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "move_to_graveyard/4" do
     test "card becomes known to both players" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.move_to_graveyard(state, "host", "c1", "hand")
-      [moved] = cards_in(new_state, "host", "graveyard")
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.move_to_graveyard(state, "p1", "c1", "hand")
+      [moved] = cards_in(new_state, "p1", "graveyard")
       assert known_to_both?(moved)
     end
 
@@ -38,9 +39,9 @@ defmodule Goodtap.GameEngine.ActionsTest do
         "active_face" => 1,
         "counters" => [%{"name" => "+1/+1", "value" => 3}]
       })
-      state = game_state() |> with_cards_in("host", "battlefield", [c])
-      {:ok, new_state} = Actions.move_to_graveyard(state, "host", "c1", "battlefield")
-      [moved] = cards_in(new_state, "host", "graveyard")
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+      {:ok, new_state} = Actions.move_to_graveyard(state, "p1", "c1", "battlefield")
+      [moved] = cards_in(new_state, "p1", "graveyard")
       assert moved["tapped"] == false
       assert moved["is_face_down"] == false
       assert moved["active_face"] == 0
@@ -49,15 +50,15 @@ defmodule Goodtap.GameEngine.ActionsTest do
 
     test "token sent to graveyard disappears (not added to zone)" do
       t = token(%{"instance_id" => "t1"})
-      state = game_state() |> with_cards_in("host", "battlefield", [t])
-      {:ok, new_state} = Actions.move_to_graveyard(state, "host", "t1", "battlefield")
-      assert cards_in(new_state, "host", "graveyard") == []
-      assert cards_in(new_state, "host", "battlefield") == []
+      state = game_state() |> with_cards_in("p1", "battlefield", [t])
+      {:ok, new_state} = Actions.move_to_graveyard(state, "p1", "t1", "battlefield")
+      assert cards_in(new_state, "p1", "graveyard") == []
+      assert cards_in(new_state, "p1", "battlefield") == []
     end
 
     test "returns error when card not found" do
       state = game_state()
-      assert {:error, _} = Actions.move_to_graveyard(state, "host", "nonexistent", "hand")
+      assert {:error, _} = Actions.move_to_graveyard(state, "p1", "nonexistent", "hand")
     end
   end
 
@@ -66,26 +67,26 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "move_to_exile/4" do
     test "card becomes known to both players" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.move_to_exile(state, "host", "c1", "hand")
-      [moved] = cards_in(new_state, "host", "exile")
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.move_to_exile(state, "p1", "c1", "hand")
+      [moved] = cards_in(new_state, "p1", "exile")
       assert known_to_both?(moved)
     end
 
     test "resets face, tapped, and counters" do
       c = card(%{"instance_id" => "c1", "tapped" => true, "counters" => [%{"name" => "x", "value" => 1}]})
-      state = game_state() |> with_cards_in("host", "battlefield", [c])
-      {:ok, new_state} = Actions.move_to_exile(state, "host", "c1", "battlefield")
-      [moved] = cards_in(new_state, "host", "exile")
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+      {:ok, new_state} = Actions.move_to_exile(state, "p1", "c1", "battlefield")
+      [moved] = cards_in(new_state, "p1", "exile")
       assert moved["tapped"] == false
       assert moved["counters"] == []
     end
 
     test "token sent to exile disappears" do
       t = token(%{"instance_id" => "t1"})
-      state = game_state() |> with_cards_in("host", "battlefield", [t])
-      {:ok, new_state} = Actions.move_to_exile(state, "host", "t1", "battlefield")
-      assert cards_in(new_state, "host", "exile") == []
+      state = game_state() |> with_cards_in("p1", "battlefield", [t])
+      {:ok, new_state} = Actions.move_to_exile(state, "p1", "t1", "battlefield")
+      assert cards_in(new_state, "p1", "exile") == []
     end
   end
 
@@ -94,18 +95,18 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "move_to_hand/4" do
     test "card becomes known to the moving player only" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "graveyard", [c])
-      {:ok, new_state} = Actions.move_to_hand(state, "host", "c1", "graveyard")
-      [moved] = cards_in(new_state, "host", "hand")
-      assert State.known_to?(moved, "host")
-      refute State.known_to?(moved, "opponent")
+      state = game_state() |> with_cards_in("p1", "graveyard", [c])
+      {:ok, new_state} = Actions.move_to_hand(state, "p1", "c1", "graveyard")
+      [moved] = cards_in(new_state, "p1", "hand")
+      assert State.known_to?(moved, "p1")
+      refute State.known_to?(moved, "p2")
     end
 
     test "token sent to hand disappears" do
       t = token(%{"instance_id" => "t1"})
-      state = game_state() |> with_cards_in("host", "battlefield", [t])
-      {:ok, new_state} = Actions.move_to_hand(state, "host", "t1", "battlefield")
-      assert cards_in(new_state, "host", "hand") == []
+      state = game_state() |> with_cards_in("p1", "battlefield", [t])
+      {:ok, new_state} = Actions.move_to_hand(state, "p1", "t1", "battlefield")
+      assert cards_in(new_state, "p1", "hand") == []
     end
   end
 
@@ -114,26 +115,25 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "move_to_battlefield/6" do
     test "face-up card becomes known to both players" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.move_to_battlefield(state, "host", "c1", "hand", 0.5, 0.5)
-      [moved] = cards_in(new_state, "host", "battlefield")
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.move_to_battlefield(state, "p1", "c1", "hand", 0.5, 0.5)
+      [moved] = cards_in(new_state, "p1", "battlefield")
       assert known_to_both?(moved)
     end
 
     test "face-down card does not change known state" do
-      # Card unknown to both before move
       c = card(%{"instance_id" => "c1", "is_face_down" => true})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.move_to_battlefield(state, "host", "c1", "hand", 0.5, 0.5)
-      [moved] = cards_in(new_state, "host", "battlefield")
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.move_to_battlefield(state, "p1", "c1", "hand", 0.5, 0.5)
+      [moved] = cards_in(new_state, "p1", "battlefield")
       assert known_to_neither?(moved)
     end
 
     test "card gets x, y, and z assigned" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.move_to_battlefield(state, "host", "c1", "hand", 0.3, 0.7)
-      [moved] = cards_in(new_state, "host", "battlefield")
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.move_to_battlefield(state, "p1", "c1", "hand", 0.3, 0.7)
+      [moved] = cards_in(new_state, "p1", "battlefield")
       assert moved["x"] == 0.3
       assert moved["y"] == 0.7
       assert is_integer(moved["z"]) and moved["z"] > 0
@@ -145,20 +145,19 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "flip_card/4" do
     test "flipping face-down card face-up on battlefield reveals it to both" do
       c = card(%{"instance_id" => "c1", "is_face_down" => true})
-      state = game_state() |> with_cards_in("host", "battlefield", [c])
-      {:ok, new_state} = Actions.flip_card(state, "host", "c1", "battlefield")
-      [flipped] = cards_in(new_state, "host", "battlefield")
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+      {:ok, new_state} = Actions.flip_card(state, "p1", "c1", "battlefield")
+      [flipped] = cards_in(new_state, "p1", "battlefield")
       assert flipped["is_face_down"] == false
       assert known_to_both?(flipped)
     end
 
     test "flipping a card in hand does not change known state" do
       c = card(%{"instance_id" => "c1", "is_face_down" => true})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.flip_card(state, "host", "c1", "hand")
-      [flipped] = cards_in(new_state, "host", "hand")
-      # Still unknown to opponent — hand flip is private
-      refute State.known_to?(flipped, "opponent")
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.flip_card(state, "p1", "c1", "hand")
+      [flipped] = cards_in(new_state, "p1", "hand")
+      refute State.known_to?(flipped, "p2")
     end
   end
 
@@ -167,19 +166,18 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "move_to_deck/4" do
     test "card from a public zone (graveyard) is known to both when returned to deck" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "graveyard", [c])
-      {:ok, new_state} = Actions.move_to_deck(state, "host", "c1", "graveyard")
-      [on_top] = cards_in(new_state, "host", "deck")
+      state = game_state() |> with_cards_in("p1", "graveyard", [c])
+      {:ok, new_state} = Actions.move_to_deck(state, "p1", "c1", "graveyard")
+      [on_top] = cards_in(new_state, "p1", "deck")
       assert known_to_both?(on_top)
     end
 
     test "card from hand is not newly revealed when moved to deck top" do
-      # Card only known to host (was drawn)
-      c = card(%{"instance_id" => "c1", "known" => %{"host" => true, "opponent" => false}})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.move_to_deck(state, "host", "c1", "hand")
-      [on_top] = cards_in(new_state, "host", "deck")
-      refute State.known_to?(on_top, "opponent")
+      c = card(%{"instance_id" => "c1", "known" => %{"p1" => true, "p2" => false}})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.move_to_deck(state, "p1", "c1", "hand")
+      [on_top] = cards_in(new_state, "p1", "deck")
+      refute State.known_to?(on_top, "p2")
     end
   end
 
@@ -188,32 +186,32 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "draw/3" do
     test "drawn card is known to the drawing player only" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "deck", [c])
-      {:ok, new_state} = Actions.draw(state, "host", 1)
-      [drawn] = cards_in(new_state, "host", "hand")
-      assert State.known_to?(drawn, "host")
-      refute State.known_to?(drawn, "opponent")
+      state = game_state() |> with_cards_in("p1", "deck", [c])
+      {:ok, new_state} = Actions.draw(state, "p1", 1)
+      [drawn] = cards_in(new_state, "p1", "hand")
+      assert State.known_to?(drawn, "p1")
+      refute State.known_to?(drawn, "p2")
     end
 
     test "drawing multiple cards makes each known to drawer only" do
       cards = for i <- 1..3, do: card(%{"instance_id" => "c#{i}"})
-      state = game_state() |> with_cards_in("host", "deck", cards)
-      {:ok, new_state} = Actions.draw(state, "host", 3)
-      hand = cards_in(new_state, "host", "hand")
+      state = game_state() |> with_cards_in("p1", "deck", cards)
+      {:ok, new_state} = Actions.draw(state, "p1", 3)
+      hand = cards_in(new_state, "p1", "hand")
       assert length(hand) == 3
-      assert Enum.all?(hand, &State.known_to?(&1, "host"))
-      assert Enum.all?(hand, &(not State.known_to?(&1, "opponent")))
+      assert Enum.all?(hand, &State.known_to?(&1, "p1"))
+      assert Enum.all?(hand, &(not State.known_to?(&1, "p2")))
     end
 
     test "drawing with top_revealed makes drawn card known to both" do
       c = card(%{"instance_id" => "c1"})
       state =
         game_state()
-        |> with_cards_in("host", "deck", [c])
-        |> put_in(["host", "top_revealed"], true)
+        |> with_cards_in("p1", "deck", [c])
+        |> put_in(["p1", "top_revealed"], true)
 
-      {:ok, new_state} = Actions.draw(state, "host", 1)
-      [drawn] = cards_in(new_state, "host", "hand")
+      {:ok, new_state} = Actions.draw(state, "p1", 1)
+      [drawn] = cards_in(new_state, "p1", "hand")
       assert known_to_both?(drawn)
     end
   end
@@ -223,48 +221,47 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "draw_top_to/3" do
     test "5 successive calls each move a different card — no clicks lost" do
       cards = for i <- 1..7, do: card(%{"instance_id" => "c#{i}", "name" => "Card #{i}"})
-      state = game_state() |> with_cards_in("host", "deck", cards)
+      state = game_state() |> with_cards_in("p1", "deck", cards)
 
-      {:ok, s1} = Actions.draw_top_to(state, "host", "hand")
-      {:ok, s2} = Actions.draw_top_to(s1, "host", "hand")
-      {:ok, s3} = Actions.draw_top_to(s2, "host", "hand")
-      {:ok, s4} = Actions.draw_top_to(s3, "host", "hand")
-      {:ok, s5} = Actions.draw_top_to(s4, "host", "hand")
+      {:ok, s1} = Actions.draw_top_to(state, "p1", "hand")
+      {:ok, s2} = Actions.draw_top_to(s1, "p1", "hand")
+      {:ok, s3} = Actions.draw_top_to(s2, "p1", "hand")
+      {:ok, s4} = Actions.draw_top_to(s3, "p1", "hand")
+      {:ok, s5} = Actions.draw_top_to(s4, "p1", "hand")
 
-      assert length(cards_in(s5, "host", "hand")) == 5
-      assert length(cards_in(s5, "host", "deck")) == 2
-      # All moved cards are distinct
-      hand_ids = Enum.map(cards_in(s5, "host", "hand"), & &1["instance_id"])
+      assert length(cards_in(s5, "p1", "hand")) == 5
+      assert length(cards_in(s5, "p1", "deck")) == 2
+      hand_ids = Enum.map(cards_in(s5, "p1", "hand"), & &1["instance_id"])
       assert length(hand_ids) == length(Enum.uniq(hand_ids))
     end
 
     test "draw_top_to graveyard — card becomes known to both" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "deck", [c])
-      {:ok, new_state} = Actions.draw_top_to(state, "host", "graveyard")
-      [moved] = cards_in(new_state, "host", "graveyard")
+      state = game_state() |> with_cards_in("p1", "deck", [c])
+      {:ok, new_state} = Actions.draw_top_to(state, "p1", "graveyard")
+      [moved] = cards_in(new_state, "p1", "graveyard")
       assert known_to_both?(moved)
     end
 
     test "draw_top_to exile — card becomes known to both" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "deck", [c])
-      {:ok, new_state} = Actions.draw_top_to(state, "host", "exile")
-      [moved] = cards_in(new_state, "host", "exile")
+      state = game_state() |> with_cards_in("p1", "deck", [c])
+      {:ok, new_state} = Actions.draw_top_to(state, "p1", "exile")
+      [moved] = cards_in(new_state, "p1", "exile")
       assert known_to_both?(moved)
     end
 
     test "draw_top_to battlefield — card becomes known to both" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "deck", [c])
-      {:ok, new_state} = Actions.draw_top_to(state, "host", "battlefield")
-      [moved] = cards_in(new_state, "host", "battlefield")
+      state = game_state() |> with_cards_in("p1", "deck", [c])
+      {:ok, new_state} = Actions.draw_top_to(state, "p1", "battlefield")
+      [moved] = cards_in(new_state, "p1", "battlefield")
       assert known_to_both?(moved)
     end
 
     test "empty deck is a no-op" do
       state = game_state()
-      {:ok, new_state} = Actions.draw_top_to(state, "host", "hand")
+      {:ok, new_state} = Actions.draw_top_to(state, "p1", "hand")
       assert new_state == state
     end
   end
@@ -274,11 +271,11 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "shuffle/2" do
     test "clears known state for all deck cards" do
       cards = for i <- 1..3 do
-        card(%{"instance_id" => "c#{i}", "known" => %{"host" => true, "opponent" => true}})
+        card(%{"instance_id" => "c#{i}", "known" => %{"p1" => true, "p2" => true}})
       end
-      state = game_state() |> with_cards_in("host", "deck", cards)
-      {:ok, new_state} = Actions.shuffle(state, "host")
-      deck = cards_in(new_state, "host", "deck")
+      state = game_state() |> with_cards_in("p1", "deck", cards)
+      {:ok, new_state} = Actions.shuffle(state, "p1")
+      deck = cards_in(new_state, "p1", "deck")
       assert Enum.all?(deck, &known_to_neither?/1)
     end
   end
@@ -288,16 +285,16 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "mulligan/2" do
     test "clears known state for all cards, redraws 7" do
       known_cards = for i <- 1..10 do
-        card(%{"instance_id" => "c#{i}", "known" => %{"host" => true, "opponent" => true}})
+        card(%{"instance_id" => "c#{i}", "known" => %{"p1" => true, "p2" => true}})
       end
       state =
         game_state()
-        |> with_cards_in("host", "hand", Enum.take(known_cards, 3))
-        |> with_cards_in("host", "deck", Enum.drop(known_cards, 3))
+        |> with_cards_in("p1", "hand", Enum.take(known_cards, 3))
+        |> with_cards_in("p1", "deck", Enum.drop(known_cards, 3))
 
-      {:ok, new_state} = Actions.mulligan(state, "host")
-      hand = cards_in(new_state, "host", "hand")
-      deck = cards_in(new_state, "host", "deck")
+      {:ok, new_state} = Actions.mulligan(state, "p1")
+      hand = cards_in(new_state, "p1", "hand")
+      deck = cards_in(new_state, "p1", "deck")
       assert length(hand) == 7
       assert length(deck) == 3
       assert Enum.all?(hand ++ deck, &known_to_neither?/1)
@@ -309,9 +306,9 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "top_revealed behavior" do
     test "enabling top_revealed immediately marks top deck card known to both" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "deck", [c])
-      {:ok, new_state} = Actions.toggle_top_revealed(state, "host")
-      [top] = cards_in(new_state, "host", "deck")
+      state = game_state() |> with_cards_in("p1", "deck", [c])
+      {:ok, new_state} = Actions.toggle_top_revealed(state, "p1")
+      [top] = cards_in(new_state, "p1", "deck")
       assert known_to_both?(top)
     end
 
@@ -319,11 +316,11 @@ defmodule Goodtap.GameEngine.ActionsTest do
       cards = [card(%{"instance_id" => "c1"}), card(%{"instance_id" => "c2"})]
       state =
         game_state()
-        |> with_cards_in("host", "deck", cards)
-        |> put_in(["host", "top_revealed"], true)
+        |> with_cards_in("p1", "deck", cards)
+        |> put_in(["p1", "top_revealed"], true)
 
-      {:ok, new_state} = Actions.draw(state, "host", 1)
-      [new_top] = cards_in(new_state, "host", "deck")
+      {:ok, new_state} = Actions.draw(state, "p1", 1)
+      [new_top] = cards_in(new_state, "p1", "deck")
       assert known_to_both?(new_top)
     end
 
@@ -331,29 +328,25 @@ defmodule Goodtap.GameEngine.ActionsTest do
       cards = for i <- 1..5, do: card(%{"instance_id" => "c#{i}"})
       state =
         game_state()
-        |> with_cards_in("host", "deck", cards)
-        |> put_in(["host", "top_revealed"], true)
+        |> with_cards_in("p1", "deck", cards)
+        |> put_in(["p1", "top_revealed"], true)
 
-      {:ok, new_state} = Actions.shuffle(state, "host")
-      [top | rest] = cards_in(new_state, "host", "deck")
+      {:ok, new_state} = Actions.shuffle(state, "p1")
+      [top | rest] = cards_in(new_state, "p1", "deck")
       assert known_to_both?(top)
-      # Only top is revealed, not rest
       assert Enum.all?(rest, &known_to_neither?/1)
     end
 
     test "disabling top_revealed does not un-reveal the top card" do
       c = card(%{"instance_id" => "c1"})
-      # Start with top_revealed off (default)
-      state = game_state() |> with_cards_in("host", "deck", [c])
+      state = game_state() |> with_cards_in("p1", "deck", [c])
 
-      # Toggle on — top card should become known to both
-      {:ok, on_state} = Actions.toggle_top_revealed(state, "host")
-      [top] = cards_in(on_state, "host", "deck")
+      {:ok, on_state} = Actions.toggle_top_revealed(state, "p1")
+      [top] = cards_in(on_state, "p1", "deck")
       assert known_to_both?(top)
 
-      # Toggle off — known state is not cleared, card stays revealed
-      {:ok, off_state} = Actions.toggle_top_revealed(on_state, "host")
-      [top2] = cards_in(off_state, "host", "deck")
+      {:ok, off_state} = Actions.toggle_top_revealed(on_state, "p1")
+      [top2] = cards_in(off_state, "p1", "deck")
       assert known_to_both?(top2)
     end
   end
@@ -363,34 +356,32 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "rapid pile hotkey moves — no clicks lost" do
     test "5 rapid moves from graveyard each act on a different card" do
       cards = for i <- 1..5, do: card(%{"instance_id" => "c#{i}"})
-      state = game_state() |> with_cards_in("host", "graveyard", cards)
+      state = game_state() |> with_cards_in("p1", "graveyard", cards)
 
-      # Simulate server resolving 5 hotkey events, each using resolve_pile_id logic
-      # (always top of graveyard)
-      {:ok, s1} = Actions.move_to_hand(state, "host", hd(get_in(state, ["host", "zones", "graveyard"]))["instance_id"], "graveyard")
-      {:ok, s2} = Actions.move_to_hand(s1, "host", hd(get_in(s1, ["host", "zones", "graveyard"]))["instance_id"], "graveyard")
-      {:ok, s3} = Actions.move_to_hand(s2, "host", hd(get_in(s2, ["host", "zones", "graveyard"]))["instance_id"], "graveyard")
-      {:ok, s4} = Actions.move_to_hand(s3, "host", hd(get_in(s3, ["host", "zones", "graveyard"]))["instance_id"], "graveyard")
-      {:ok, s5} = Actions.move_to_hand(s4, "host", hd(get_in(s4, ["host", "zones", "graveyard"]))["instance_id"], "graveyard")
+      {:ok, s1} = Actions.move_to_hand(state, "p1", hd(get_in(state, ["p1", "zones", "graveyard"]))["instance_id"], "graveyard")
+      {:ok, s2} = Actions.move_to_hand(s1, "p1", hd(get_in(s1, ["p1", "zones", "graveyard"]))["instance_id"], "graveyard")
+      {:ok, s3} = Actions.move_to_hand(s2, "p1", hd(get_in(s2, ["p1", "zones", "graveyard"]))["instance_id"], "graveyard")
+      {:ok, s4} = Actions.move_to_hand(s3, "p1", hd(get_in(s3, ["p1", "zones", "graveyard"]))["instance_id"], "graveyard")
+      {:ok, s5} = Actions.move_to_hand(s4, "p1", hd(get_in(s4, ["p1", "zones", "graveyard"]))["instance_id"], "graveyard")
 
-      assert length(get_in(s5, ["host", "zones", "hand"])) == 5
-      assert get_in(s5, ["host", "zones", "graveyard"]) == []
-      hand_ids = Enum.map(get_in(s5, ["host", "zones", "hand"]), & &1["instance_id"])
+      assert length(get_in(s5, ["p1", "zones", "hand"])) == 5
+      assert get_in(s5, ["p1", "zones", "graveyard"]) == []
+      hand_ids = Enum.map(get_in(s5, ["p1", "zones", "hand"]), & &1["instance_id"])
       assert length(hand_ids) == length(Enum.uniq(hand_ids))
     end
 
     test "5 rapid moves from exile each act on a different card" do
       cards = for i <- 1..5, do: card(%{"instance_id" => "e#{i}"})
-      state = game_state() |> with_cards_in("host", "exile", cards)
+      state = game_state() |> with_cards_in("p1", "exile", cards)
 
       final = Enum.reduce(1..5, state, fn _, st ->
-        top_id = hd(get_in(st, ["host", "zones", "exile"]))["instance_id"]
-        {:ok, new_st} = Actions.move_to_hand(st, "host", top_id, "exile")
+        top_id = hd(get_in(st, ["p1", "zones", "exile"]))["instance_id"]
+        {:ok, new_st} = Actions.move_to_hand(st, "p1", top_id, "exile")
         new_st
       end)
 
-      assert length(get_in(final, ["host", "zones", "hand"])) == 5
-      assert get_in(final, ["host", "zones", "exile"]) == []
+      assert length(get_in(final, ["p1", "zones", "hand"])) == 5
+      assert get_in(final, ["p1", "zones", "exile"]) == []
     end
   end
 
@@ -399,41 +390,134 @@ defmodule Goodtap.GameEngine.ActionsTest do
   describe "log message card name visibility" do
     test "card moved to graveyard should show name (always public after move)" do
       c = card(%{"instance_id" => "c1", "name" => "Lightning Bolt"})
-      state = game_state() |> with_cards_in("host", "hand", [c])
-      {:ok, new_state} = Actions.move_to_graveyard(state, "host", "c1", "hand")
-      [moved] = cards_in(new_state, "host", "graveyard")
-      # After move to GY, card is known to both — name should be shown in log
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.move_to_graveyard(state, "p1", "c1", "hand")
+      [moved] = cards_in(new_state, "p1", "graveyard")
       assert known_to_both?(moved)
     end
 
     test "card drawn to hand should NOT show name (only known to drawer)" do
       c = card(%{"instance_id" => "c1", "name" => "Secret Card"})
-      state = game_state() |> with_cards_in("host", "deck", [c])
-      {:ok, new_state} = Actions.draw(state, "host", 1)
-      [drawn] = cards_in(new_state, "host", "hand")
-      # Not known to both — should not show name in opponent's log
+      state = game_state() |> with_cards_in("p1", "deck", [c])
+      {:ok, new_state} = Actions.draw(state, "p1", 1)
+      [drawn] = cards_in(new_state, "p1", "hand")
       refute known_to_both?(drawn)
     end
 
     test "card from unknown deck to hand via draw_top_to — not known to both" do
       c = card(%{"instance_id" => "c1"})
-      state = game_state() |> with_cards_in("host", "deck", [c])
-      {:ok, new_state} = Actions.draw_top_to(state, "host", "hand")
-      [drawn] = cards_in(new_state, "host", "hand")
-      # Known to host only — log should say "a card"
-      assert State.known_to?(drawn, "host")
-      refute State.known_to?(drawn, "opponent")
+      state = game_state() |> with_cards_in("p1", "deck", [c])
+      {:ok, new_state} = Actions.draw_top_to(state, "p1", "hand")
+      [drawn] = cards_in(new_state, "p1", "hand")
+      assert State.known_to?(drawn, "p1")
+      refute State.known_to?(drawn, "p2")
     end
 
-    test "card already known to both moved to hand — still known to both (ok to show name)" do
-      # A card that was on battlefield (known to both) goes to hand
-      c = card(%{"instance_id" => "c1", "name" => "Famous Card", "known" => %{"host" => true, "opponent" => true}})
-      state = game_state() |> with_cards_in("host", "battlefield", [c])
-      {:ok, new_state} = Actions.move_to_hand(state, "host", "c1", "battlefield")
-      [moved] = cards_in(new_state, "host", "hand")
-      # move_to_hand marks known to player, but opponent knowledge was already true
-      # The card is still known to opponent from before — so name is ok to show
-      assert State.known_to?(moved, "opponent")
+    test "card already known to both moved to hand — still known to both" do
+      c = card(%{"instance_id" => "c1", "name" => "Famous Card", "known" => %{"p1" => true, "p2" => true}})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+      {:ok, new_state} = Actions.move_to_hand(state, "p1", "c1", "battlefield")
+      [moved] = cards_in(new_state, "p1", "hand")
+      assert State.known_to?(moved, "p2")
+    end
+  end
+
+  # ─── Copy Opponent Card ───────────────────────────────────────────────────
+
+  describe "copy_opponent_card/4" do
+    test "copies a face-up card from another player's battlefield" do
+      c = card(%{"instance_id" => "opp1", "name" => "Dragon", "x" => 0.5, "y" => 0.3,
+                 "known" => %{"p1" => true, "p2" => true}})
+      state = game_state() |> with_cards_in("p2", "battlefield", [c])
+      {:ok, new_state} = Actions.copy_opponent_card(state, "p1", "p2", "opp1")
+      p1_bf = cards_in(new_state, "p1", "battlefield")
+      assert length(p1_bf) == 1
+      assert hd(p1_bf)["name"] == "Dragon"
+      assert hd(p1_bf)["is_token"] == true
+    end
+
+    test "does not copy face-down cards" do
+      c = card(%{"instance_id" => "opp1", "is_face_down" => true, "x" => 0.5, "y" => 0.3})
+      state = game_state() |> with_cards_in("p2", "battlefield", [c])
+      {:ok, new_state} = Actions.copy_opponent_card(state, "p1", "p2", "opp1")
+      assert cards_in(new_state, "p1", "battlefield") == []
+    end
+  end
+
+  # ─── Reveal / Hide Hand ───────────────────────────────────────────────────
+
+  describe "reveal_cards/3" do
+    test "marks specified hand cards as known to all other players" do
+      c1 = card(%{"instance_id" => "c1"})
+      c2 = card(%{"instance_id" => "c2"})
+      state = game_state() |> with_cards_in("p1", "hand", [c1, c2])
+      {:ok, new_state} = Actions.reveal_cards(state, "p1", ["c1"])
+      hand = cards_in(new_state, "p1", "hand")
+      revealed = Enum.find(hand, &(&1["instance_id"] == "c1"))
+      hidden = Enum.find(hand, &(&1["instance_id"] == "c2"))
+      assert State.known_to?(revealed, "p2")
+      refute State.known_to?(hidden, "p2")
+    end
+
+    test "works with 3 players — reveals to all others" do
+      c = card(%{"instance_id" => "c1"})
+      state = %{
+        "p1" => player_state() |> put_in(["zones", "hand"], [c]),
+        "p2" => player_state(),
+        "p3" => player_state(),
+        "z_counter" => 0
+      }
+      {:ok, new_state} = Actions.reveal_cards(state, "p1", ["c1"])
+      [revealed] = get_in(new_state, ["p1", "zones", "hand"])
+      assert State.known_to?(revealed, "p2")
+      assert State.known_to?(revealed, "p3")
+      refute State.known_to?(revealed, "p1")
+    end
+  end
+
+  describe "hide_hand/2" do
+    test "clears knowledge of all other players for hand cards" do
+      c = card(%{"instance_id" => "c1", "known" => %{"p1" => true, "p2" => true}})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+      {:ok, new_state} = Actions.hide_hand(state, "p1")
+      [hidden] = cards_in(new_state, "p1", "hand")
+      refute State.known_to?(hidden, "p2")
+      # p1 still knows their own card
+      assert State.known_to?(hidden, "p1")
+    end
+  end
+
+  # ─── Z-index renumbering with N players ───────────────────────────────────
+
+  describe "z-index renumbering" do
+    test "next_z renumbers across all players when max is exceeded" do
+      # Create state with z_counter near the max (15) across two players
+      p1_cards = for i <- 1..8 do
+        card(%{"instance_id" => "p1c#{i}", "x" => i / 10, "y" => 0.5, "z" => i})
+      end
+      p2_cards = for i <- 1..8 do
+        card(%{"instance_id" => "p2c#{i}", "x" => i / 10, "y" => 0.5, "z" => i + 8})
+      end
+
+      state =
+        game_state()
+        |> with_cards_in("p1", "battlefield", p1_cards)
+        |> with_cards_in("p2", "battlefield", p2_cards)
+        |> Map.put("z_counter", 16)
+
+      # Moving a card should trigger renumbering
+      c = card(%{"instance_id" => "new"})
+      state_with_new = put_in(state, ["p1", "zones", "hand"], [c])
+      {:ok, new_state} = Actions.move_to_battlefield(state_with_new, "p1", "new", "hand", 0.5, 0.5)
+
+      # All z values should be reasonable (renumbered from 1..N+1)
+      all_z =
+        (get_in(new_state, ["p1", "zones", "battlefield"]) ++
+         get_in(new_state, ["p2", "zones", "battlefield"]))
+        |> Enum.map(& &1["z"])
+
+      assert Enum.all?(all_z, &(&1 > 0))
+      assert Enum.max(all_z) <= 18  # at most 17 cards + 1
     end
   end
 end

@@ -18,41 +18,50 @@ defmodule GoodtapWeb.GameSetupLive do
     if game.status == "active" do
       {:ok, push_navigate(socket, to: ~p"/games/#{game.id}/play")}
     else
-      # Join game if user is not host and game is waiting
       game =
         cond do
-          game.host_id == user.id ->
+          # Already a player — no action needed
+          Games.player_key_for(game, user.id) != nil ->
             game
 
-          is_nil(game.opponent_id) && game.status == "waiting" ->
-            {:ok, _} = Games.join_game(game, user)
-            updated = Games.get_game!(game.id)
-            Games.broadcast_game_update(updated)
-            updated
+          # Room available — join
+          length(game.game_players) < game.max_players ->
+            case Games.join_game(game, user) do
+              {:ok, updated, _key} ->
+                Games.broadcast_game_update(updated)
+                updated
+              {:error, :full} ->
+                game
+              _ ->
+                game
+            end
 
-          game.opponent_id == user.id ->
-            game
-
+          # Full — redirect
           true ->
-            game
+            nil
         end
 
-      Games.subscribe_to_game(game.id)
-      decks = Decks.list_user_decks(user.id)
+      if is_nil(game) do
+        {:ok,
+         socket
+         |> put_flash(:error, "This game is full.")
+         |> push_navigate(to: ~p"/games")}
+      else
+        Games.subscribe_to_game(game.id)
+        decks = Decks.list_user_decks(user.id)
+        my_role = Games.player_key_for(game, user.id)
+        invite_url = GoodtapWeb.Endpoint.url() <> ~p"/games/join/#{game.id}"
 
-      my_role = if game.host_id == user.id, do: :host, else: :opponent
-
-      invite_url = GoodtapWeb.Endpoint.url() <> ~p"/games/join/#{game.id}"
-
-      {:ok,
-       assign(socket,
-         game: game,
-         my_role: my_role,
-         decks: decks,
-         invite_url: invite_url,
-         page_title: "Game Setup",
-         selected_deck_id: nil
-       )}
+        {:ok,
+         assign(socket,
+           game: game,
+           my_role: my_role,
+           decks: decks,
+           invite_url: invite_url,
+           page_title: "Game Setup",
+           selected_deck_id: nil
+         )}
+      end
     end
   end
 
@@ -71,33 +80,19 @@ defmodule GoodtapWeb.GameSetupLive do
   def handle_info(_, socket), do: {:noreply, socket}
 
   def handle_event("select_deck", %{"deck_id" => deck_id}, socket) do
-    user = socket.assigns.current_scope.user
     game = socket.assigns.game
+    my_role = socket.assigns.my_role
 
-    result =
-      if game.host_id == user.id do
-        Games.set_host_deck(game, deck_id)
-      else
-        Games.set_opponent_deck(game, deck_id)
-      end
-
-    case result do
+    case Games.set_player_deck(game, my_role, deck_id) do
       {:ok, updated_game} ->
+        updated_game = Games.get_game!(updated_game.id)
         Games.broadcast_game_update(updated_game)
 
-        # Check if both players are ready to start
         case Games.maybe_start_game(updated_game) do
-          {:start, _game} ->
-            # Initialize full game state and start
-            state_data = updated_game.game_state || %{}
-            host_deck_id = state_data["host_deck_id"]
-            opponent_deck_id = state_data["opponent_deck_id"]
-
-            host = updated_game.host
-            opponent = updated_game.opponent
-
-            game_state =
-              GameEngineState.initialize(host, opponent, host_deck_id, opponent_deck_id)
+          {:start, _} ->
+            deck_ids = get_in(updated_game.game_state, ["deck_ids"]) || %{}
+            players_with_keys = Enum.map(updated_game.game_players, &{&1.player_key, &1.user})
+            game_state = GameEngineState.initialize(players_with_keys, deck_ids)
 
             {:ok, started_game} = Games.update_game_state(updated_game, game_state)
             {:ok, started_game} = Games.start_game(started_game)
@@ -115,22 +110,8 @@ defmodule GoodtapWeb.GameSetupLive do
     end
   end
 
-  defp my_deck_id(game, my_role) do
-    state = game.game_state || %{}
-
-    case my_role do
-      :host -> state["host_deck_id"]
-      :opponent -> state["opponent_deck_id"]
-    end
-  end
-
-  defp opponent_deck_id(game, my_role) do
-    state = game.game_state || %{}
-
-    case my_role do
-      :host -> state["opponent_deck_id"]
-      :opponent -> state["host_deck_id"]
-    end
+  defp deck_id_for(game, player_key) do
+    get_in(game.game_state, ["deck_ids", player_key])
   end
 
   def render(assigns) do
@@ -140,7 +121,9 @@ defmodule GoodtapWeb.GameSetupLive do
 
       <%!-- Invite Section --%>
       <div class="bg-gray-800 rounded-xl p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3">Invite Your Opponent</h2>
+        <h2 class="text-lg font-semibold mb-3">
+          Invite Players ({length(@game.game_players)}/{@game.max_players} joined)
+        </h2>
         <div class="flex gap-2">
           <input
             type="text"
@@ -165,37 +148,33 @@ defmodule GoodtapWeb.GameSetupLive do
         <h2 class="text-lg font-semibold mb-4">Players</h2>
 
         <div class="space-y-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-green-500"></div>
-              <span>{@game.host.username} (Host)</span>
-            </div>
-            <span class={if my_deck_id(@game, :host), do: "text-green-400", else: "text-yellow-400"}>
-              {if my_deck_id(@game, :host), do: "Deck selected", else: "Choosing deck..."}
-            </span>
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <div class={[
-                "w-2 h-2 rounded-full",
-                if(@game.opponent, do: "bg-green-500", else: "bg-gray-500")
-              ]}>
+          <%= for gp <- Enum.sort_by(@game.game_players, & &1.player_key) do %>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                <span>
+                  {gp.user.username}
+                  {if gp.player_key == "p1", do: " (Host)", else: ""}
+                  {if gp.player_key == @my_role, do: " (You)", else: ""}
+                </span>
               </div>
-              <span>
-                {if @game.opponent, do: @game.opponent.username, else: "Waiting for opponent..."}
+              <span class={if deck_id_for(@game, gp.player_key), do: "text-green-400", else: "text-yellow-400"}>
+                {if deck_id_for(@game, gp.player_key), do: "Deck selected", else: "Choosing deck..."}
               </span>
             </div>
-            <span :if={@game.opponent} class={
-              if my_deck_id(@game, :opponent), do: "text-green-400", else: "text-yellow-400"
-            }>
-              {if my_deck_id(@game, :opponent), do: "Deck selected", else: "Choosing deck..."}
-            </span>
-          </div>
+          <% end %>
+
+          <%= for _i <- (length(@game.game_players) + 1)..@game.max_players do %>
+            <div class="flex items-center gap-2 text-gray-500">
+              <div class="w-2 h-2 rounded-full bg-gray-600"></div>
+              <span>Waiting for player...</span>
+            </div>
+          <% end %>
         </div>
 
         <div
-          :if={@game.opponent && my_deck_id(@game, :host) && my_deck_id(@game, :opponent)}
+          :if={length(@game.game_players) == @game.max_players &&
+            Enum.all?(@game.game_players, &deck_id_for(@game, &1.player_key))}
           class="mt-4 text-center text-green-400 font-medium"
         >
           Starting game...
@@ -220,7 +199,7 @@ defmodule GoodtapWeb.GameSetupLive do
               phx-value-deck_id={deck.id}
               class={[
                 "w-full text-left p-3 rounded-lg border transition-colors",
-                if(my_deck_id(@game, @my_role) == to_string(deck.id),
+                if(deck_id_for(@game, @my_role) == to_string(deck.id),
                   do: "border-purple-500 bg-purple-900/30",
                   else: "border-gray-600 hover:border-gray-400"
                 )

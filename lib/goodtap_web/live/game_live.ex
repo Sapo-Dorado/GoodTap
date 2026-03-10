@@ -18,12 +18,14 @@ defmodule GoodtapWeb.GameLive do
   defp mount_game(game, socket) do
     user = socket.assigns.current_scope.user
 
+    my_role = Games.player_key_for(game, user.id)
+
     # Verify user is in this game
-    unless game.host_id == user.id || game.opponent_id == user.id do
+    unless my_role do
       {:ok, push_navigate(socket, to: ~p"/games")}
     else
-      my_role = if game.host_id == user.id, do: "host", else: "opponent"
-      opp_role = if my_role == "host", do: "opponent", else: "host"
+      opponent_roles = Games.player_keys(game) |> Enum.reject(&(&1 == my_role))
+      viewed_opponent = List.first(opponent_roles)
 
       game_state = game.game_state || %{}
 
@@ -44,7 +46,8 @@ defmodule GoodtapWeb.GameLive do
          game: game,
          game_state: game_state,
          my_role: my_role,
-         opp_role: opp_role,
+         opponent_roles: opponent_roles,
+         viewed_opponent: viewed_opponent,
          page_title: "Game",
          # UI state
          open_zone: nil,
@@ -99,13 +102,17 @@ defmodule GoodtapWeb.GameLive do
 
   def handle_info({:sideboarding_started, game}, socket) do
     sideboard_deck = build_sideboard_deck(game.game_state, socket.assigns.my_role)
-    {:noreply, assign(socket, game: game, game_state: game.game_state, sideboard_modal: true, sideboard_deck: sideboard_deck, sideboard_pending: [])}
+    opponent_roles = Games.player_keys(game) |> Enum.reject(&(&1 == socket.assigns.my_role))
+    viewed_opponent = socket.assigns.viewed_opponent || List.first(opponent_roles)
+    {:noreply, assign(socket, game: game, game_state: game.game_state, sideboard_modal: true, sideboard_deck: sideboard_deck, sideboard_pending: [], opponent_roles: opponent_roles, viewed_opponent: viewed_opponent)}
   end
 
   def handle_info({:game_restarted, game}, socket) do
+    opponent_roles = Games.player_keys(game) |> Enum.reject(&(&1 == socket.assigns.my_role))
+    viewed_opponent = socket.assigns.viewed_opponent || List.first(opponent_roles)
     {:noreply,
      socket
-     |> assign(game: game, game_state: game.game_state, sideboard_modal: false, sideboard_pending: [], end_game_modal: false)
+     |> assign(game: game, game_state: game.game_state, sideboard_modal: false, sideboard_pending: [], end_game_modal: false, opponent_roles: opponent_roles, viewed_opponent: viewed_opponent)
      |> put_flash(:info, "New game started!")}
   end
 
@@ -165,6 +172,8 @@ defmodule GoodtapWeb.GameLive do
             |> Enum.find(&(&1["instance_id"] == instance_id))
           actions = Hotkeys.valid_actions_for_opponent_battlefield()
           if card && card["is_face_down"], do: actions -- [:copy_opponent_card], else: actions
+        owner && owner != socket.assigns.my_role && zone == "hand" ->
+          []
         true ->
           Hotkeys.valid_actions_for(zone)
       end
@@ -216,13 +225,13 @@ defmodule GoodtapWeb.GameLive do
   def handle_event("hotkey", %{"key" => key, "instance_id" => id, "zone" => zone} = params, socket) do
     owner = params["owner"]
     my_role = socket.assigns.my_role
-    opp_role = socket.assigns.opp_role
+    viewed_opponent = socket.assigns.viewed_opponent
     selected = socket.assigns.selected_cards
     has_selection = not MapSet.equal?(selected, MapSet.new())
     is_my_card = not is_nil(id) and owner == my_role
 
     valid_actions = if is_my_card, do: Hotkeys.valid_actions_for(zone), else: []
-    valid_opponent_actions = if not is_nil(id) and owner == opp_role, do: Hotkeys.valid_actions_for_opponent_battlefield(), else: []
+    valid_opponent_actions = if not is_nil(id) and owner != nil and owner != my_role, do: Hotkeys.valid_actions_for_opponent_battlefield(), else: []
     action_allowed? = fn action -> action in valid_actions or action in valid_opponent_actions end
 
     k = Hotkeys
@@ -293,8 +302,7 @@ defmodule GoodtapWeb.GameLive do
           key == k.key_for(:move_to_hand) and :draw_top_to in valid_actions ->
             apply_action(socket, fn st, p ->
               top = List.first(get_in(st, [p, "zones", "deck"]) || [])
-              name = if top && State.known_to?(top, "host") && State.known_to?(top, "opponent"),
-                do: top["name"], else: "a card"
+              name = if top && all_know?(st, top), do: top["name"], else: "a card"
               with {:ok, new_st} <- Actions.draw_top_to(st, p, "hand") do
                 {:ok, append_log(new_st, p, "#{name} → hand")}
               end
@@ -378,9 +386,11 @@ defmodule GoodtapWeb.GameLive do
                 end
               end)
             else
+              src = owner || viewed_opponent
               apply_action(socket, fn st, p ->
-                with {:ok, new_st} <- Actions.copy_opponent_card(st, p, id) do
-                  {:ok, append_log(new_st, p, "copied opponent's #{card_name_from_state(new_st, opp_role, id)}")}
+                with {:ok, new_st} <- Actions.copy_opponent_card(st, p, src, id) do
+                  opp_name = card_name_from_state(new_st, src, id)
+                  {:ok, append_log(new_st, p, "copied #{opp_name}")}
                 end
               end)
             end
@@ -511,11 +521,12 @@ defmodule GoodtapWeb.GameLive do
     end)
   end
 
-  def handle_event("action", %{"type" => "copy_opponent_card", "instance_id" => id}, socket) do
-    opp_role = socket.assigns.opp_role
+  def handle_event("action", %{"type" => "copy_opponent_card", "instance_id" => id} = params, socket) do
+    source = params["owner"] || socket.assigns.viewed_opponent
     apply_action(socket, fn state, player ->
-      with {:ok, new_state} <- Actions.copy_opponent_card(state, player, id) do
-        {:ok, append_log(new_state, player, "copied opponent's #{card_name_from_state(new_state, opp_role, id)}")}
+      with {:ok, new_state} <- Actions.copy_opponent_card(state, player, source, id) do
+        opp_name = card_name_from_state(new_state, source, id)
+        {:ok, append_log(new_state, player, "copied #{opp_name}")}
       end
     end)
   end
@@ -537,7 +548,7 @@ defmodule GoodtapWeb.GameLive do
       when dest in ["battlefield", "battlefield_face_down", "graveyard", "exile", "hand"] do
     apply_action(socket, fn state, player ->
       top = List.first(get_in(state, [player, "zones", "deck"]) || [])
-      already_public = top && State.known_to?(top, "host") && State.known_to?(top, "opponent")
+      already_public = top && all_know?(state, top)
       name = (top && top["name"]) || "top card"
 
       with {:ok, new_state} <- Actions.draw_top_to(state, player, dest) do
@@ -755,6 +766,14 @@ defmodule GoodtapWeb.GameLive do
   end
 
   # ─── Zone Popup ───────────────────────────────────────────────────────────
+
+  def handle_event("set_viewed_opponent", %{"player_key" => key}, socket) do
+    if key in socket.assigns.opponent_roles do
+      {:noreply, assign(socket, viewed_opponent: key)}
+    else
+      {:noreply, socket}
+    end
+  end
 
   def handle_event("open_zone", %{"zone" => zone, "owner" => owner}, socket) do
     {:noreply, assign(socket, open_zone: {owner, zone, %{}})}
@@ -1111,24 +1130,21 @@ defmodule GoodtapWeb.GameLive do
 
     {:ok, updated_game} = Games.submit_sideboard_with_card_list(game, my_role, card_spec)
 
-    if Games.both_sideboard_ready?(updated_game) do
-      # Both ready — reinitialize game using stored card lists (no DB deck reads)
+    if Games.all_sideboard_ready?(updated_game) do
+      # All ready — reinitialize game using stored card lists (no DB deck reads)
       state_data = updated_game.game_state
       card_lists = state_data["sideboard_card_lists"] || %{}
 
-      host_spec = card_lists["host"]
-      opp_spec = card_lists["opponent"]
+      card_specs =
+        Map.new(updated_game.game_players, fn gp ->
+          spec = card_lists[gp.player_key] || %{}
+          {gp.player_key, {spec["card_names"] || [], spec["commander_names"] || [], spec["deck_id"]}}
+        end)
 
-      card_specs = %{
-        "host" => {host_spec["card_names"], host_spec["commander_names"] || [], host_spec["deck_id"]},
-        "opponent" => {opp_spec["card_names"], opp_spec["commander_names"] || [], opp_spec["deck_id"]}
-      }
-
-      host = updated_game.host
-      opponent = updated_game.opponent
+      players_with_keys = Enum.map(updated_game.game_players, &{&1.player_key, &1.user})
 
       new_state =
-        State.initialize_with_card_lists(host, opponent, card_specs, roll_die: false)
+        State.initialize_with_card_lists(players_with_keys, card_specs, roll_die: false)
         |> Map.put("sideboard_card_lists", card_lists)
 
       {:ok, restarted} = Games.update_game_state(updated_game, new_state)
@@ -1356,17 +1372,24 @@ defmodule GoodtapWeb.GameLive do
     card = Enum.find_value(all_zones, fn zone ->
       find_card_in_zone(state, player, zone, instance_id)
     end)
-    if card && State.known_to?(card, "host") && State.known_to?(card, "opponent") do
+    if card && all_know?(state, card) do
       card["name"] || "a card"
     else
       "a card"
     end
   end
 
+  # Returns true if every player in the game knows about this card.
+  defp all_know?(state, card) do
+    keys = State.all_player_keys(state)
+    keys != [] && Enum.all?(keys, &State.known_to?(card, &1))
+  end
+
   # ─── Template Helpers ─────────────────────────────────────────────────────
 
   defp my_state(game_state, my_role), do: game_state[my_role] || %{}
   defp opp_state(game_state, opp_role), do: game_state[opp_role] || %{}
+  defp player_state(game_state, key), do: game_state[key] || %{}
 
   defp zone_cards(player_state, zone) do
     get_in(player_state, ["zones", zone]) || []
@@ -1380,7 +1403,7 @@ defmodule GoodtapWeb.GameLive do
     assigns =
       assigns
       |> assign(:my, my_state(assigns.game_state, assigns.my_role))
-      |> assign(:opp, opp_state(assigns.game_state, assigns.opp_role))
+      |> assign(:opp, opp_state(assigns.game_state, assigns.viewed_opponent))
 
     ~H"""
     <div class="h-full flex overflow-hidden bg-gray-950 select-none">
@@ -1390,6 +1413,32 @@ defmodule GoodtapWeb.GameLive do
       phx-hook="DragDrop"
       data-my-role={@my_role}
     >
+      <%!-- Opponent Selector (only shown when there are multiple opponents) --%>
+      <%= if length(@opponent_roles) > 1 do %>
+        <div class="flex items-center gap-2 px-4 py-1.5 bg-gray-950 border-b border-gray-700 shrink-0 overflow-x-auto">
+          <%= for opp_key <- @opponent_roles do %>
+            <% opp_data = player_state(@game_state, opp_key) %>
+            <button
+              phx-click="set_viewed_opponent"
+              phx-value-player_key={opp_key}
+              class={[
+                "flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-colors shrink-0",
+                if(@viewed_opponent == opp_key,
+                  do: "bg-blue-700 text-white",
+                  else: "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                )
+              ]}
+            >
+              <span class="font-medium">{opp_data["username"] || opp_key}</span>
+              <span class="text-red-400 text-xs">♥ {opp_data["life"] || 20}</span>
+              <%= for tracker <- opp_data["trackers"] || [] do %>
+                <span class="text-xs text-gray-300 bg-gray-600/70 rounded px-1">{tracker["name"]} {tracker["value"]}</span>
+              <% end %>
+            </button>
+          <% end %>
+        </div>
+      <% end %>
+
       <%!-- Opponent Info Bar --%>
       <div class="flex items-center gap-4 px-4 py-2 bg-gray-900 border-b border-gray-700 shrink-0">
         <span class="font-bold text-sm">{@opp["username"] || "Opponent"}</span>
@@ -1413,7 +1462,7 @@ defmodule GoodtapWeb.GameLive do
         style="height: 64px;"
         phx-click="open_zone"
         phx-value-zone="hand"
-        phx-value-owner={@opp_role}
+        phx-value-owner={@viewed_opponent}
       >
         <div class="flex items-center gap-1 px-4 py-2 min-w-max mx-auto">
           <%= if hand_count > 0 do %>
@@ -1475,16 +1524,16 @@ defmodule GoodtapWeb.GameLive do
               data-hoverable="true"
               data-instance-id={card["instance_id"]}
               data-zone="battlefield"
-              data-owner={@opp_role}
+              data-owner={@viewed_opponent}
             >
               <div class="opp-card-inner">
                 <div
                   style="transform: rotate(180deg); transform-origin: center;"
-                  data-card-img={card_display_url(card, @my_role, @opp_role, "battlefield")}
+                  data-card-img={card_display_url(card, @my_role, @viewed_opponent, "battlefield")}
                 >
                 <div class="flex flex-col items-center">
                   <img
-                    src={card_display_url(card, @my_role, @opp_role, "battlefield")}
+                    src={card_display_url(card, @my_role, @viewed_opponent, "battlefield")}
                     class="card-image rounded shadow-lg"
                     draggable="false"
                   />
@@ -1576,11 +1625,11 @@ defmodule GoodtapWeb.GameLive do
             style="top: 8px; left: 8px; z-index: 20;"
             phx-click="open_zone"
             phx-value-zone="deck"
-            phx-value-owner={@opp_role}
+            phx-value-owner={@viewed_opponent}
           >
             <div class="relative" style="width: 56px; height: 78px;">
               <%= if zone_cards(@opp, "deck") != [] do %>
-                <img src={card_display_url(hd(zone_cards(@opp, "deck")), @my_role, @opp_role, "deck")} class="rounded shadow-lg pointer-events-none" style="width: 56px; height: 78px; object-fit: cover;" draggable="false" />
+                <img src={card_display_url(hd(zone_cards(@opp, "deck")), @my_role, @viewed_opponent, "deck")} class="rounded shadow-lg pointer-events-none" style="width: 56px; height: 78px; object-fit: cover;" draggable="false" />
               <% else %>
                 <div class="w-full h-full bg-gray-800 border border-gray-600 rounded flex flex-col items-center justify-center gap-0.5">
                   <span class="text-gray-400 text-xs font-semibold">DECK</span>
@@ -1598,12 +1647,12 @@ defmodule GoodtapWeb.GameLive do
             style="top: 8px; right: 8px; z-index: 20;"
             phx-click="open_zone"
             phx-value-zone="graveyard"
-            phx-value-owner={@opp_role}
+            phx-value-owner={@viewed_opponent}
           >
             <div class="relative" style="width: 78px; height: 56px;">
               <%= if zone_cards(@opp, "graveyard") != [] do %>
                 <img
-                  src={card_display_url(hd(zone_cards(@opp, "graveyard")), @opp_role, @opp_role, "graveyard")}
+                  src={card_display_url(hd(zone_cards(@opp, "graveyard")), @viewed_opponent, @viewed_opponent, "graveyard")}
                   class="rounded pointer-events-none"
                   style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
                   draggable="false"
@@ -1625,12 +1674,12 @@ defmodule GoodtapWeb.GameLive do
             style="top: 72px; right: 8px; z-index: 20;"
             phx-click="open_zone"
             phx-value-zone="exile"
-            phx-value-owner={@opp_role}
+            phx-value-owner={@viewed_opponent}
           >
             <div class="relative" style="width: 78px; height: 56px;">
               <%= if zone_cards(@opp, "exile") != [] do %>
                 <img
-                  src={card_display_url(hd(zone_cards(@opp, "exile")), @opp_role, @opp_role, "exile")}
+                  src={card_display_url(hd(zone_cards(@opp, "exile")), @viewed_opponent, @viewed_opponent, "exile")}
                   class="rounded pointer-events-none"
                   style="position: absolute; top: 50%; left: 50%; width: 56px; height: 78px; object-fit: cover; transform: translate(-50%, -50%) rotate(90deg);"
                   draggable="false"
@@ -2198,17 +2247,15 @@ defmodule GoodtapWeb.GameLive do
       <%!-- Die Roll Modal --%>
       <%= if @die_roll_modal && is_map(@game_state["die_roll"]) do %>
         <% die = @game_state["die_roll"] %>
-        <% host_roll = die["host"] || 0 %>
-        <% opp_roll = die["opponent"] || 0 %>
-        <% host_dice = die["host_dice"] || [host_roll] %>
-        <% opp_dice = die["opponent_dice"] || [opp_roll] %>
-        <% host_name = get_in(@game_state, ["host", "username"]) || "Host" %>
-        <% opp_name = get_in(@game_state, ["opponent", "username"]) || "Opponent" %>
-        <% winner = cond do
-          host_roll > opp_roll -> host_name
-          opp_roll > host_roll -> opp_name
-          true -> nil
-        end %>
+        <% player_keys = State.all_player_keys(@game_state) %>
+        <% rolls = Enum.map(player_keys, fn k ->
+          total = die[k] || 0
+          dice = die["#{k}_dice"] || [total]
+          username = get_in(@game_state, [k, "username"]) || k
+          {k, username, total, dice}
+        end) %>
+        <% {_winner_key, winner_name, winner_total, _} = Enum.max_by(rolls, &elem(&1, 2)) %>
+        <% is_tie = Enum.count(rolls, fn {_, _, t, _} -> t == winner_total end) > 1 %>
         <%!-- Pip positions for each face of a d6, as {cx, cy} pairs --%>
         <% pip_layouts = %{
           1 => [{50, 50}],
@@ -2219,42 +2266,31 @@ defmodule GoodtapWeb.GameLive do
           6 => [{25, 22}, {75, 22}, {25, 50}, {75, 50}, {25, 78}, {75, 78}]
         } %>
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div class="bg-gray-800 rounded-xl p-8 w-full max-w-md mx-4 text-center shadow-2xl">
+          <div class="bg-gray-800 rounded-xl p-8 w-full max-w-lg mx-4 text-center shadow-2xl">
             <h2 class="text-2xl font-bold mt-2">Die Roll</h2>
             <div style="height: 1.5rem;"></div>
-            <div class="flex justify-around items-start mb-8">
-              <div class="flex flex-col items-center gap-3 flex-1">
-                <span class="text-base text-gray-300 font-medium">{host_name}</span>
-                <div class="flex">
-                  <%= for d <- host_dice do %>
-                    <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
-                      <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
-                        <circle cx={cx} cy={cy} r="9" fill="white"/>
-                      <% end %>
-                    </svg>
-                  <% end %>
+            <div class={["flex items-start mb-8", if(length(rolls) > 2, do: "flex-wrap justify-center gap-6", else: "justify-around")]}>
+              <%= for {_key, username, total, dice} <- rolls do %>
+                <div class="flex flex-col items-center gap-3 flex-1 min-w-[120px]">
+                  <span class="text-base text-gray-300 font-medium">{username}</span>
+                  <div class="flex flex-wrap justify-center gap-1">
+                    <%= for d <- dice do %>
+                      <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
+                        <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
+                          <circle cx={cx} cy={cy} r="9" fill="white"/>
+                        <% end %>
+                      </svg>
+                    <% end %>
+                  </div>
+                  <span class="text-lg font-bold text-white">{total}</span>
                 </div>
-                <span class="text-lg font-bold text-white">{host_roll}</span>
-              </div>
-              <div class="flex flex-col items-center gap-3 flex-1">
-                <span class="text-base text-gray-300 font-medium">{opp_name}</span>
-                <div class="flex">
-                  <%= for d <- opp_dice do %>
-                    <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
-                      <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
-                        <circle cx={cx} cy={cy} r="9" fill="white"/>
-                      <% end %>
-                    </svg>
-                  <% end %>
-                </div>
-                <span class="text-lg font-bold text-white">{opp_roll}</span>
-              </div>
+              <% end %>
             </div>
             <p class="text-lg font-semibold mb-6">
-              <%= if winner do %>
-                <span class="text-green-400">{winner}</span> goes first!
-              <% else %>
+              <%= if is_tie do %>
                 It's a tie — reroll to decide!
+              <% else %>
+                <span class="text-green-400">{winner_name}</span> goes first!
               <% end %>
             </p>
             <button phx-click="dismiss_die_roll" class="btn btn-primary w-full">

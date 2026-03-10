@@ -6,33 +6,49 @@ defmodule Goodtap.GameEngine.StateTest do
 
   describe "known_to?/2" do
     test "map format — true when role is true" do
-      c = card(%{"known" => %{"host" => true, "opponent" => false}})
-      assert State.known_to?(c, "host")
-      refute State.known_to?(c, "opponent")
+      c = card(%{"known" => %{"p1" => true, "p2" => false}})
+      assert State.known_to?(c, "p1")
+      refute State.known_to?(c, "p2")
     end
 
     test "map format — false by default" do
-      c = card(%{"known" => %{"host" => false, "opponent" => false}})
-      refute State.known_to?(c, "host")
-      refute State.known_to?(c, "opponent")
+      c = card(%{"known" => %{"p1" => false, "p2" => false}})
+      refute State.known_to?(c, "p1")
+      refute State.known_to?(c, "p2")
     end
 
-    test "legacy boolean true — known to all" do
-      c = card(%{"known" => true})
-      assert State.known_to?(c, "host")
-      assert State.known_to?(c, "opponent")
-    end
-
-    test "legacy boolean false — known to none" do
-      c = card(%{"known" => false})
-      refute State.known_to?(c, "host")
-      refute State.known_to?(c, "opponent")
+    test "empty map — unknown to any role" do
+      c = card(%{"known" => %{}})
+      refute State.known_to?(c, "p1")
+      refute State.known_to?(c, "p2")
     end
 
     test "nil known — treated as false" do
       c = card(%{"known" => nil})
-      refute State.known_to?(c, "host")
-      refute State.known_to?(c, "opponent")
+      refute State.known_to?(c, "p1")
+      refute State.known_to?(c, "p2")
+    end
+  end
+
+  describe "all_player_keys/1" do
+    test "returns sorted player keys" do
+      state = game_state()
+      assert State.all_player_keys(state) == ["p1", "p2"]
+    end
+
+    test "returns keys for N players" do
+      state = %{
+        "p1" => player_state(),
+        "p2" => player_state(),
+        "p3" => player_state(),
+        "z_counter" => 0
+      }
+      assert State.all_player_keys(state) == ["p1", "p2", "p3"]
+    end
+
+    test "ignores non-player keys" do
+      state = game_state() |> Map.put("die_roll", %{}) |> Map.put("log", [])
+      assert State.all_player_keys(state) == ["p1", "p2"]
     end
   end
 
@@ -45,44 +61,44 @@ defmodule Goodtap.GameEngine.StateTest do
     end
 
     test "owner sees front of their own hand card" do
-      c = card_with_images(%{"known" => %{"host" => true, "opponent" => false}})
-      assert State.card_display_url(c, "host", "host", "hand") == @front_url
+      c = card_with_images(%{"known" => %{"p1" => true, "p2" => false}})
+      assert State.card_display_url(c, "p1", "p1", "hand") == @front_url
     end
 
     test "opponent cannot see owner's hand card — shows card back" do
       c = card_with_images()
-      assert State.card_display_url(c, "opponent", "host", "hand") == State.card_back_url()
+      assert State.card_display_url(c, "p2", "p1", "hand") == State.card_back_url()
     end
 
     test "face-down card shows back regardless of zone or knowledge" do
-      c = card_with_images(%{"is_face_down" => true, "known" => %{"host" => true, "opponent" => true}})
-      assert State.card_display_url(c, "host", "host", "battlefield") == State.card_back_url()
+      c = card_with_images(%{"is_face_down" => true, "known" => %{"p1" => true, "p2" => true}})
+      assert State.card_display_url(c, "p1", "p1", "battlefield") == State.card_back_url()
     end
 
     test "active_face 1 shows back image" do
       c = card_with_images(%{"active_face" => 1})
-      assert State.card_display_url(c, "host", "host", "battlefield") == @back_url
+      assert State.card_display_url(c, "p1", "p1", "battlefield") == @back_url
     end
 
     test "active_face 1 with no back image falls back to card back" do
       c = card(Map.merge(%{"image_uris" => %{"front" => @front_url, "back" => nil}, "active_face" => 1}, %{}))
-      assert State.card_display_url(c, "host", "host", "battlefield") == State.card_back_url()
+      assert State.card_display_url(c, "p1", "p1", "battlefield") == State.card_back_url()
     end
 
     test "battlefield card (face-up) shows front" do
-      c = card_with_images(%{"known" => %{"host" => true, "opponent" => true}})
-      assert State.card_display_url(c, "host", "host", "battlefield") == @front_url
-      assert State.card_display_url(c, "opponent", "host", "battlefield") == @front_url
+      c = card_with_images(%{"known" => %{"p1" => true, "p2" => true}})
+      assert State.card_display_url(c, "p1", "p1", "battlefield") == @front_url
+      assert State.card_display_url(c, "p2", "p1", "battlefield") == @front_url
     end
 
     test "deck card not known to viewer shows back" do
-      c = card_with_images(%{"known" => %{"host" => false, "opponent" => false}})
-      assert State.card_display_url(c, "host", "host", "deck") == State.card_back_url()
+      c = card_with_images(%{"known" => %{"p1" => false, "p2" => false}})
+      assert State.card_display_url(c, "p1", "p1", "deck") == State.card_back_url()
     end
 
     test "deck card known to viewer (top_revealed) shows front" do
-      c = card_with_images(%{"known" => %{"host" => true, "opponent" => true}})
-      assert State.card_display_url(c, "host", "host", "deck") == @front_url
+      c = card_with_images(%{"known" => %{"p1" => true, "p2" => true}})
+      assert State.card_display_url(c, "p1", "p1", "deck") == @front_url
     end
   end
 end

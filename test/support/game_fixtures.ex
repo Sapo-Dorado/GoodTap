@@ -17,7 +17,7 @@ defmodule Goodtap.GameFixtures do
         "image_uris" => %{"front" => "https://example.com/front.jpg", "back" => nil},
         "counters" => [],
         "tapped" => false,
-        "known" => %{"host" => false, "opponent" => false}
+        "known" => %{}
       },
       attrs
     )
@@ -27,10 +27,11 @@ defmodule Goodtap.GameFixtures do
     card(Map.merge(%{"is_token" => true}, attrs))
   end
 
-  def game_state(host_attrs \\ %{}, opponent_attrs \\ %{}) do
+  # Builds a 2-player game state with "p1" and "p2" as player keys.
+  def game_state(p1_attrs \\ %{}, p2_attrs \\ %{}) do
     %{
-      "host" => player_state(host_attrs),
-      "opponent" => player_state(opponent_attrs),
+      "p1" => player_state(p1_attrs),
+      "p2" => player_state(p2_attrs),
       "z_counter" => 0
     }
   end
@@ -38,7 +39,7 @@ defmodule Goodtap.GameFixtures do
   def player_state(attrs \\ %{}) do
     Map.merge(
       %{
-        "user_id" => "host-user-id",
+        "user_id" => "test-user-id",
         "username" => "testuser",
         "life" => 20,
         "trackers" => [],

@@ -6,25 +6,25 @@ defmodule Goodtap.GameEngine.Actions do
   defp mark_known_to(card, role), do: put_in_known(card, role, true)
   defp clear_known_to(card, role), do: put_in_known(card, role, false)
 
-  defp mark_known_to_both(card) do
-    card
-    |> mark_known_to("host")
-    |> mark_known_to("opponent")
+  defp mark_known_to_all(card, player_keys) do
+    Enum.reduce(player_keys, card, &mark_known_to(&2, &1))
   end
 
-  defp clear_known_to_both(card) do
-    card
-    |> clear_known_to("host")
-    |> clear_known_to("opponent")
+  defp clear_known_to_all(card, player_keys) do
+    Enum.reduce(player_keys, card, &clear_known_to(&2, &1))
   end
 
-  # If the player has "top_revealed" enabled, mark the current top deck card known to both.
+  # Convenience wrappers that derive player keys from state
+  defp mark_known_to_both(card, state), do: mark_known_to_all(card, State.all_player_keys(state))
+  defp clear_known_to_both(card, state), do: clear_known_to_all(card, State.all_player_keys(state))
+
+  # If the player has "top_revealed" enabled, mark the current top deck card known to all.
   # Called after any action that changes the deck contents or order.
   defp maybe_reveal_deck_top(state, player) do
     if get_in(state, [player, "top_revealed"]) do
       case get_in(state, [player, "zones", "deck"]) do
         [top | rest] ->
-          put_in(state, [player, "zones", "deck"], [mark_known_to_both(top) | rest])
+          put_in(state, [player, "zones", "deck"], [mark_known_to_both(top, state) | rest])
         _ ->
           state
       end
@@ -34,14 +34,7 @@ defmodule Goodtap.GameEngine.Actions do
   end
 
   defp put_in_known(card, role, value) do
-    known =
-      case card["known"] do
-        true -> %{"host" => true, "opponent" => true}
-        false -> %{"host" => false, "opponent" => false}
-        nil -> %{"host" => false, "opponent" => false}
-        map when is_map(map) -> map
-      end
-
+    known = if is_map(card["known"]), do: card["known"], else: %{}
     Map.put(card, "known", Map.put(known, role, value))
   end
 
@@ -57,7 +50,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_graveyard(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
+      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both(state)
 
       if card["is_token"] do
         {:ok, maybe_reveal_deck_top(state, player)}
@@ -71,7 +64,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_exile(state, player, instance_id, source_zone) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
+      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both(state)
 
       if card["is_token"] do
         {:ok, maybe_reveal_deck_top(state, player)}
@@ -85,7 +78,7 @@ defmodule Goodtap.GameEngine.Actions do
     graveyard = get_in(state, [player, "zones", "graveyard"]) || []
     existing_exile = get_in(state, [player, "zones", "exile"]) || []
     {to_exile, _tokens} = Enum.split_with(graveyard, &(!&1["is_token"]))
-    to_exile = Enum.map(to_exile, &(&1 |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()))
+    to_exile = Enum.map(to_exile, &(&1 |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both(state)))
     state
     |> put_in([player, "zones", "graveyard"], [])
     |> put_in([player, "zones", "exile"], to_exile ++ existing_exile)
@@ -94,9 +87,6 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Reorder Within Zone ──────────────────────────────────────────────────
 
-  # Generic reorder for any list zone (hand, deck, graveyard, exile).
-  # insert_index is the desired position *before* removal, so we adjust for
-  # the gap left by removing the card.
   def reorder_in_zone(state, player, zone, instance_id, insert_index) do
     cards = get_in(state, [player, "zones", zone]) || []
     original_index = Enum.find_index(cards, fn c -> c["instance_id"] == instance_id end)
@@ -141,7 +131,7 @@ defmodule Goodtap.GameEngine.Actions do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       was_face_down = card["is_face_down"]
       card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters()
-      card = if was_face_down, do: card, else: mark_known_from_zone(card, source_zone)
+      card = if was_face_down, do: card, else: mark_known_from_zone(card, source_zone, state)
 
       if card["is_token"] do
         {:ok, state}
@@ -162,7 +152,7 @@ defmodule Goodtap.GameEngine.Actions do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
       was_face_down = card["is_face_down"]
       card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters()
-      card = if was_face_down, do: card, else: mark_known_from_zone(card, source_zone)
+      card = if was_face_down, do: card, else: mark_known_from_zone(card, source_zone, state)
 
       if card["is_token"] do
         {:ok, state}
@@ -185,9 +175,7 @@ defmodule Goodtap.GameEngine.Actions do
         |> Map.put("y", fy)
         |> Map.put("z", z)
 
-      # Face-down cards retain existing known state (player keeps prior knowledge).
-      # Face-up cards entering battlefield are visible to all.
-      card = if card["is_face_down"], do: card, else: mark_known_to_both(card)
+      card = if card["is_face_down"], do: card, else: mark_known_to_both(card, state)
 
       {:ok, maybe_reveal_deck_top(append_to_zone(state, player, "battlefield", card), player)}
     end
@@ -209,9 +197,7 @@ defmodule Goodtap.GameEngine.Actions do
       else
         currently_face_down = card["is_face_down"]
         card = Map.update!(card, "is_face_down", &(!&1))
-        # Only reveal knowledge when flipping face-up on the battlefield (public zone).
-        # Flipping in hand is a private action and doesn't change visibility.
-        if currently_face_down and zone == "battlefield", do: mark_known_to_both(card), else: card
+        if currently_face_down and zone == "battlefield", do: mark_known_to_both(card, state), else: card
       end
     end)
   end
@@ -236,15 +222,15 @@ defmodule Goodtap.GameEngine.Actions do
             "battlefield" ->
               {fx, fy} = nudge_if_occupied(state, player, 0.5, 0.5, nil)
               {state, z} = next_z(state)
-              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", false) |> Map.put("x", fx) |> Map.put("y", fy) |> Map.put("z", z) |> mark_known_to_both()
+              card = card |> Map.put("tapped", false) |> Map.put("is_face_down", false) |> Map.put("x", fx) |> Map.put("y", fy) |> Map.put("z", z) |> mark_known_to_both(state)
               update_in(state, [player, "zones", "battlefield"], &(&1 ++ [card]))
 
             "graveyard" ->
-              card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
+              card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both(state)
               if card["is_token"], do: state, else: prepend_to_zone(state, player, "graveyard", card)
 
             "exile" ->
-              card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both()
+              card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to_both(state)
               if card["is_token"], do: state, else: prepend_to_zone(state, player, "exile", card)
 
             "hand" ->
@@ -293,7 +279,7 @@ defmodule Goodtap.GameEngine.Actions do
       |> Enum.take(count)
       |> Enum.map(fn card ->
         card = mark_known_to(card, player)
-        if top_revealed, do: mark_known_to_both(card), else: card
+        if top_revealed, do: mark_known_to_both(card, state), else: card
       end)
 
     remaining = Enum.drop(deck, count)
@@ -315,7 +301,7 @@ defmodule Goodtap.GameEngine.Actions do
     state =
       update_in(state, [player, "zones", "deck"], fn deck ->
         deck
-        |> Enum.map(&clear_known_to_both/1)
+        |> Enum.map(&clear_known_to_both(&1, state))
         |> Enum.shuffle()
       end)
       |> maybe_reveal_deck_top(player)
@@ -331,7 +317,7 @@ defmodule Goodtap.GameEngine.Actions do
 
     new_deck =
       (hand ++ deck)
-      |> Enum.map(&clear_known_to_both/1)
+      |> Enum.map(&clear_known_to_both(&1, state))
       |> Enum.shuffle()
 
     {new_hand, new_deck} = Enum.split(new_deck, 7)
@@ -348,13 +334,10 @@ defmodule Goodtap.GameEngine.Actions do
   # ─── Scry ─────────────────────────────────────────────────────────────────
 
   # Reveal top N cards (remove from deck top, return them for display).
-  # When scrying more than 1 card, clear known state on all revealed cards —
-  # the player sees them during scry but can't track individual positions afterward.
-  # top_revealed does not change this — the new top is revealed after scry_resolve.
   def scry_reveal(state, player, count) do
     deck = get_in(state, [player, "zones", "deck"])
     top_cards = Enum.take(deck, count)
-    top_cards = if count > 1, do: Enum.map(top_cards, &clear_known_to_both/1), else: top_cards
+    top_cards = if count > 1, do: Enum.map(top_cards, &clear_known_to_both(&1, state)), else: top_cards
     remaining = Enum.drop(deck, count)
     state = put_in(state, [player, "zones", "deck"], remaining)
     {top_cards, state}
@@ -390,14 +373,13 @@ defmodule Goodtap.GameEngine.Actions do
       end)
 
     deck = get_in(state, [player, "zones", "deck"])
-    # to_top was built in reverse order (head prepend), reverse it
     new_deck = Enum.reverse(to_top) ++ deck ++ to_bottom
     state = put_in(state, [player, "zones", "deck"], new_deck)
     maybe_reveal_deck_top(state, player)
   end
 
   defp move_to_graveyard_direct(state, player, card) do
-    card = card |> reset_face() |> mark_known_to_both()
+    card = card |> reset_face() |> mark_known_to_both(state)
 
     if card["is_token"] do
       {:ok, state}
@@ -407,7 +389,7 @@ defmodule Goodtap.GameEngine.Actions do
   end
 
   defp move_to_exile_direct(state, player, card) do
-    card = card |> reset_face() |> mark_known_to_both()
+    card = card |> reset_face() |> mark_known_to_both(state)
 
     if card["is_token"] do
       {:ok, state}
@@ -477,11 +459,9 @@ defmodule Goodtap.GameEngine.Actions do
     end
   end
 
-  # Copy a card from the opponent's battlefield onto the player's battlefield.
-  def copy_opponent_card(state, player, instance_id) do
-    opp = if player == "host", do: "opponent", else: "host"
-
-    case find_in_zone(state, opp, "battlefield", instance_id) do
+  # Copy a card from a source player's battlefield onto the current player's battlefield.
+  def copy_opponent_card(state, player, source_player, instance_id) do
+    case find_in_zone(state, source_player, "battlefield", instance_id) do
       nil -> {:ok, state}
       %{"is_face_down" => true} -> {:ok, state}
       original ->
@@ -562,22 +542,50 @@ defmodule Goodtap.GameEngine.Actions do
     {:ok, state}
   end
 
+  # ─── Reveal / Hide Hand ───────────────────────────────────────────────────
+
+  # Mark all given cards in player's hand as known to all other players.
+  def reveal_cards(state, player, instance_ids) do
+    other_players = other_player_keys(state, player)
+
+    state =
+      update_in(state, [player, "zones", "hand"], fn hand ->
+        Enum.map(hand, fn card ->
+          if card["instance_id"] in instance_ids do
+            mark_known_to_all(card, other_players)
+          else
+            card
+          end
+        end)
+      end)
+
+    {:ok, state}
+  end
+
+  # Clear all other players' knowledge for cards in player's hand.
+  def hide_hand(state, player) do
+    other_players = other_player_keys(state, player)
+
+    state =
+      update_in(state, [player, "zones", "hand"], fn hand ->
+        Enum.map(hand, &clear_known_to_all(&1, other_players))
+      end)
+
+    {:ok, state}
+  end
+
   # ─── Private Helpers ─────────────────────────────────────────────────────
 
-  # Nudge x right by 1% steps until no other card occupies the same rounded-percent
-  # position, or the battlefield boundary (98%) is reached. Uses round() instead of
-  # trunc() to avoid float drift (e.g. 57/100*100 = 56.999... -> trunc = 56 != 57).
-  # Pass exclude_instance_id to ignore the card being moved.
   @max_card_z 15
 
   defp next_z(state) do
     next = (state["z_counter"] || 0) + 1
 
     if next > @max_card_z do
-      # Renumber all battlefield cards across both players by their current z order,
+      # Renumber all battlefield cards across all players by their current z order,
       # then assign the next available z value.
       all_cards =
-        ["host", "opponent"]
+        State.all_player_keys(state)
         |> Enum.flat_map(fn role ->
           (get_in(state, [role, "zones", "battlefield"]) || [])
           |> Enum.map(&{role, &1})
@@ -602,6 +610,11 @@ defmodule Goodtap.GameEngine.Actions do
     end
   end
 
+  # Returns all player keys in state except the given one.
+  defp other_player_keys(state, player_key) do
+    State.all_player_keys(state) |> Enum.reject(&(&1 == player_key))
+  end
+
   defp nudge_if_occupied(state, player, x, y, exclude_instance_id) do
     bf = get_in(state, [player, "zones", "battlefield"]) || []
     occupied =
@@ -613,7 +626,6 @@ defmodule Goodtap.GameEngine.Actions do
     tx =
       Stream.iterate(start, &(&1 + 1))
       |> Enum.find(fn cx -> cx >= 95 or not MapSet.member?(occupied, {cx, ty}) end)
-    # Store as integer percent / 100 so trunc(result * 100) == tx (no float drift).
     {tx / 100, ty / 100}
   end
 
@@ -667,42 +679,9 @@ defmodule Goodtap.GameEngine.Actions do
     |> Map.put("active_face", 0)
   end
 
-  # Mark a card as known to both when it was in a public zone (everyone saw it).
-  # Hand is private so it only counts from battlefield/graveyard/exile.
-  defp mark_known_from_zone(card, source_zone) when source_zone in ["battlefield", "graveyard", "exile"] do
-    mark_known_to_both(card)
+  # Mark a card as known to all when it was in a public zone.
+  defp mark_known_from_zone(card, source_zone, state) when source_zone in ["battlefield", "graveyard", "exile"] do
+    mark_known_to_both(card, state)
   end
-  defp mark_known_from_zone(card, _source_zone), do: card
-
-  # ─── Reveal / Hide Hand ───────────────────────────────────────────────────
-
-  # Mark all given cards in player's hand as known to the opponent.
-  def reveal_cards(state, player, instance_ids) do
-    opp_role = if player == "host", do: "opponent", else: "host"
-
-    state =
-      update_in(state, [player, "zones", "hand"], fn hand ->
-        Enum.map(hand, fn card ->
-          if card["instance_id"] in instance_ids do
-            mark_known_to(card, opp_role)
-          else
-            card
-          end
-        end)
-      end)
-
-    {:ok, state}
-  end
-
-  # Clear opponent knowledge for all cards in player's hand.
-  def hide_hand(state, player) do
-    opp_role = if player == "host", do: "opponent", else: "host"
-
-    state =
-      update_in(state, [player, "zones", "hand"], fn hand ->
-        Enum.map(hand, &clear_known_to(&1, opp_role))
-      end)
-
-    {:ok, state}
-  end
+  defp mark_known_from_zone(card, _source_zone, _state), do: card
 end
