@@ -443,10 +443,13 @@ defmodule Goodtap.GameEngine.Actions do
 
   # ─── Add Counter ─────────────────────────────────────────────────────────
 
-  def add_counter(state, player, instance_id, counter_name) do
+  def add_counter(state, player, instance_id, counter_name, has_quantity \\ true) do
     update_in_zone(state, player, "battlefield", instance_id, fn card ->
       counters = card["counters"] || []
-      new_counter = %{"name" => counter_name, "value" => 0}
+      new_counter =
+        if has_quantity,
+          do: %{"name" => counter_name, "value" => 0, "has_quantity" => true},
+          else: %{"name" => counter_name, "has_quantity" => false}
       Map.put(card, "counters", counters ++ [new_counter])
     end)
   end

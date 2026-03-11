@@ -9,6 +9,7 @@ defmodule Goodtap.Accounts.User do
     field :confirmed_at, :utc_datetime
     field :authenticated_at, :utc_datetime, virtual: true
     field :recent_tokens, {:array, :map}, default: []
+    field :recent_counters, {:array, :map}, default: []
 
     timestamps(type: :utc_datetime)
   end

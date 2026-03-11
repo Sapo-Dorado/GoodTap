@@ -99,6 +99,22 @@ defmodule Goodtap.Accounts do
   end
 
   @doc """
+  Prepends a counter entry to the user's recent_counters list, keeping only the 5 most recent.
+  Deduplicates by name + has_quantity so the same counter isn't listed twice.
+  """
+  def add_recent_counter(user, name, has_quantity) do
+    entry = %{"name" => name, "has_quantity" => has_quantity}
+
+    updated =
+      [entry | Enum.reject(user.recent_counters, &(&1["name"] == name && &1["has_quantity"] == has_quantity))]
+      |> Enum.take(5)
+
+    user
+    |> Ecto.Changeset.change(recent_counters: updated)
+    |> Repo.update!()
+  end
+
+  @doc """
   Prepends a token entry to the user's recent_tokens list, keeping only the 5 most recent.
   Deduplicates by name + oracle_text so distinct same-named tokens (e.g. Samurai variants) are tracked separately.
   """

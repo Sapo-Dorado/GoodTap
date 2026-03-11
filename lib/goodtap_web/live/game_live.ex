@@ -63,6 +63,7 @@ defmodule GoodtapWeb.GameLive do
          # Add counter
          adding_counter_to: nil,
          counter_name_input: "",
+         recent_counters: user.recent_counters,
          # End game
          end_game_modal: false,
          # Die roll modal
@@ -713,20 +714,39 @@ defmodule GoodtapWeb.GameLive do
     {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
   end
 
-  def handle_event("add_counter", %{"name" => name}, socket) do
+  def handle_event("add_counter", %{"name" => name} = params, socket) do
     id = socket.assigns.adding_counter_to
     name = String.trim(name)
+    has_quantity = params["has_quantity"] == "true"
 
     if id && name != "" do
-      socket =
-        apply_action_inline(socket, fn state, player ->
-          Actions.add_counter(state, player, id, name)
-        end)
+      socket = apply_action_inline(socket, fn state, player ->
+        Actions.add_counter(state, player, id, name, has_quantity)
+      end)
 
-      {:noreply, assign(socket, adding_counter_to: nil)}
+      user = socket.assigns.current_scope.user
+      updated_user = Accounts.add_recent_counter(user, name, has_quantity)
+      updated_scope = %{socket.assigns.current_scope | user: updated_user}
+
+      {:noreply, assign(socket, adding_counter_to: nil, recent_counters: updated_user.recent_counters, current_scope: updated_scope)}
     else
       {:noreply, assign(socket, adding_counter_to: nil)}
     end
+  end
+
+  def handle_event("add_recent_counter", %{"name" => name, "has_quantity" => hq}, socket) do
+    id = socket.assigns.adding_counter_to
+    has_quantity = hq == "true"
+
+    socket = apply_action_inline(socket, fn state, player ->
+      Actions.add_counter(state, player, id, name, has_quantity)
+    end)
+
+    user = socket.assigns.current_scope.user
+    updated_user = Accounts.add_recent_counter(user, name, has_quantity)
+    updated_scope = %{socket.assigns.current_scope | user: updated_user}
+
+    {:noreply, assign(socket, adding_counter_to: nil, recent_counters: updated_user.recent_counters, current_scope: updated_scope)}
   end
 
   def handle_event("cancel_add_counter", _params, socket) do
@@ -1561,25 +1581,27 @@ defmodule GoodtapWeb.GameLive do
                   <%= for {counter, cidx} <- Enum.with_index(card["counters"] || []) do %>
                     <div class="relative group/counter">
                       <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight">
-                        <div class="flex items-center gap-1 justify-center">
-                          <button
-                            phx-hook="CounterButton"
-                            id={"counter-minus-#{card["instance_id"]}-#{cidx}"}
-                            data-event="adjust_counter"
-                            data-delta="-1"
-                            data-params={Jason.encode!(%{"instance_id" => card["instance_id"], "counter_index" => to_string(cidx)})}
-                            class="text-xs hover:text-red-300 shrink-0"
-                          >-</button>
-                          <span class="font-mono text-sm font-bold">{counter["value"]}</span>
-                          <button
-                            phx-hook="CounterButton"
-                            id={"counter-plus-#{card["instance_id"]}-#{cidx}"}
-                            data-event="adjust_counter"
-                            data-delta="1"
-                            data-params={Jason.encode!(%{"instance_id" => card["instance_id"], "counter_index" => to_string(cidx)})}
-                            class="text-xs hover:text-green-300 shrink-0"
-                          >+</button>
-                        </div>
+                        <%= if counter["has_quantity"] != false do %>
+                          <div class="flex items-center gap-1 justify-center">
+                            <button
+                              phx-hook="CounterButton"
+                              id={"counter-minus-#{card["instance_id"]}-#{cidx}"}
+                              data-event="adjust_counter"
+                              data-delta="-1"
+                              data-params={Jason.encode!(%{"instance_id" => card["instance_id"], "counter_index" => to_string(cidx)})}
+                              class="text-xs hover:text-red-300 shrink-0"
+                            >-</button>
+                            <span class="font-mono text-sm font-bold">{counter["value"]}</span>
+                            <button
+                              phx-hook="CounterButton"
+                              id={"counter-plus-#{card["instance_id"]}-#{cidx}"}
+                              data-event="adjust_counter"
+                              data-delta="1"
+                              data-params={Jason.encode!(%{"instance_id" => card["instance_id"], "counter_index" => to_string(cidx)})}
+                              class="text-xs hover:text-green-300 shrink-0"
+                            >+</button>
+                          </div>
+                        <% end %>
                         <span class="text-xs text-gray-300 text-center">{counter["name"]}</span>
                       </div>
                       <button
@@ -1619,7 +1641,9 @@ defmodule GoodtapWeb.GameLive do
                         <div class="flex flex-col gap-0.5 mt-0.5 items-center">
                           <%= for counter <- card["counters"] || [] do %>
                             <div class="bg-gray-600/90 text-white rounded px-1.5 py-0.5 flex flex-col items-center leading-tight w-full">
-                              <span class="font-mono text-sm font-bold">{counter["value"]}</span>
+                              <%= if counter["has_quantity"] != false do %>
+                                <span class="font-mono text-sm font-bold">{counter["value"]}</span>
+                              <% end %>
                               <span class="text-xs text-gray-300 text-center">{counter["name"]}</span>
                             </div>
                           <% end %>
@@ -2269,6 +2293,22 @@ defmodule GoodtapWeb.GameLive do
       >
         <div class="bg-gray-800 rounded-xl p-6 w-80 mx-4">
           <h2 class="text-lg font-bold mb-4">Add Counter</h2>
+          <%= if @recent_counters != [] do %>
+            <p class="text-xs text-gray-500 mb-1.5">Recent</p>
+            <div class="flex flex-wrap gap-2 mb-3 pb-2 border-b border-gray-700">
+              <%= for rc <- @recent_counters do %>
+                <button
+                  type="button"
+                  phx-click="add_recent_counter"
+                  phx-value-name={rc["name"]}
+                  phx-value-has_quantity={to_string(rc["has_quantity"])}
+                  class="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-xs text-gray-200 border border-gray-600 cursor-pointer"
+                >
+                  {rc["name"]}<%= if rc["has_quantity"] do %> <span class="text-gray-400">#</span><% end %>
+                </button>
+              <% end %>
+            </div>
+          <% end %>
           <form phx-submit="add_counter">
             <input
               type="text"
@@ -2277,6 +2317,10 @@ defmodule GoodtapWeb.GameLive do
               class="input input-bordered w-full bg-gray-700 mb-3"
               autofocus
             />
+            <label class="flex items-center gap-2 text-sm text-gray-300 mb-4 cursor-pointer select-none">
+              <input type="checkbox" name="has_quantity" value="true" checked class="checkbox checkbox-sm" />
+              Has quantity
+            </label>
             <div class="flex gap-2 justify-end">
               <button type="button" phx-click="cancel_add_counter" class="btn btn-ghost btn-sm">
                 Cancel
