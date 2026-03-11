@@ -16,6 +16,7 @@ defmodule GoodtapWeb.DeckLive do
       {:ok,
        assign(socket,
          deck: deck,
+         card_map: load_card_map(deck),
          page_title: deck.name,
          deck_view_mode: :list,
          editing_qty: nil,
@@ -38,7 +39,7 @@ defmodule GoodtapWeb.DeckLive do
       {qty, _} when qty > 0 ->
         deck_card = Decks.get_deck_card!(id)
         {:ok, _} = Decks.update_deck_card_quantity(deck_card, qty)
-        {:noreply, assign(socket, deck: reload_deck(socket), editing_qty: nil)}
+        {:noreply, socket |> reload_deck() |> assign(editing_qty: nil)}
       _ ->
         {:noreply, assign(socket, editing_qty: nil)}
     end
@@ -53,7 +54,7 @@ defmodule GoodtapWeb.DeckLive do
       {qty, _} when qty > 0 ->
         deck_card = Decks.get_deck_card!(id)
         {:ok, _} = Decks.update_deck_card_quantity(deck_card, qty)
-        {:noreply, assign(socket, deck: reload_deck(socket), editing_qty: nil)}
+        {:noreply, socket |> reload_deck() |> assign(editing_qty: nil)}
       _ ->
         {:noreply, assign(socket, editing_qty: nil)}
     end
@@ -64,7 +65,7 @@ defmodule GoodtapWeb.DeckLive do
   def handle_event("remove_card", %{"id" => id}, socket) do
     deck_card = Decks.get_deck_card!(id)
     {:ok, _} = Decks.remove_deck_card(deck_card)
-    {:noreply, assign(socket, deck: reload_deck(socket))}
+    {:noreply, reload_deck(socket)}
   end
 
   # ─── Deck Card Context Menu ───────────────────────────────────────────────
@@ -87,12 +88,12 @@ defmodule GoodtapWeb.DeckLive do
   def handle_event("move_card_board", %{"id" => id, "board" => board}, socket) do
     deck_card = Decks.get_deck_card!(id)
     {:ok, _} = Decks.move_deck_card_board(deck_card, board)
-    {:noreply, assign(socket, deck: reload_deck(socket), deck_card_menu: nil)}
+    {:noreply, socket |> reload_deck() |> assign(deck_card_menu: nil)}
   end
 
   def handle_event("set_commander", %{"id" => id}, socket) do
     {:ok, _} = Decks.set_commander(socket.assigns.deck.id, id)
-    {:noreply, assign(socket, deck: reload_deck(socket), deck_card_menu: nil)}
+    {:noreply, socket |> reload_deck() |> assign(deck_card_menu: nil)}
   end
 
   # ─── View Mode ────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ defmodule GoodtapWeb.DeckLive do
 
   def handle_event("select_printing", %{"deck_card_id" => id, "printing_id" => printing_id}, socket) do
     {:ok, _} = Decks.update_deck_card_printing(Decks.get_deck_card!(id), printing_id)
-    {:noreply, assign(socket, deck: reload_deck(socket))}
+    {:noreply, reload_deck(socket)}
   end
 
   # ─── Add Card ─────────────────────────────────────────────────────────────
@@ -121,12 +122,20 @@ defmodule GoodtapWeb.DeckLive do
   def handle_info({:deck_card_selected, %{"card_name" => card_name, "printing_id" => printing_id}}, socket) do
     board = socket.assigns.adding_to_board || "main"
     {:ok, _} = Decks.add_card_to_deck(socket.assigns.deck, card_name, printing_id, board)
-    {:noreply, assign(socket, deck: reload_deck(socket), adding_to_board: nil)}
+    {:noreply, socket |> reload_deck() |> assign(adding_to_board: nil)}
   end
 
   # ─── Helpers ──────────────────────────────────────────────────────────────
 
-  defp reload_deck(socket), do: Decks.get_deck_with_cards!(socket.assigns.deck.id)
+  defp reload_deck(socket) do
+    deck = Decks.get_deck_with_cards!(socket.assigns.deck.id)
+    socket |> assign(deck: deck, card_map: load_card_map(deck))
+  end
+
+  defp load_card_map(deck) do
+    names = Enum.map(deck.deck_cards, & &1.card_name) |> Enum.uniq()
+    Catalog.list_cards_by_names(names) |> Map.new(&{&1.name, &1})
+  end
 
   defp board_label("commander"), do: "Starts in Play"
   defp board_label(board), do: String.capitalize(board)
@@ -145,17 +154,14 @@ defmodule GoodtapWeb.DeckLive do
     end)
   end
 
-  defp card_image_url(card_name, printing_id) do
-    case Catalog.get_card_by_name(card_name) do
-      nil -> nil
-      card ->
-        printing = if printing_id, do: Enum.find(card.printings, &(&1["id"] == printing_id))
-        cond do
-          printing -> get_in(printing, ["image_uris", "normal"])
-          true ->
-            get_in(card.data, ["image_uris", "normal"]) ||
-              get_in(card.data, ["card_faces", Access.at(0), "image_uris", "normal"])
-        end
+  defp card_image_url_from_card(nil, _printing_id), do: nil
+  defp card_image_url_from_card(card, printing_id) do
+    printing = if printing_id, do: Enum.find(card.printings, &(&1["id"] == printing_id))
+    cond do
+      printing -> get_in(printing, ["image_uris", "normal"])
+      true ->
+        get_in(card.data, ["image_uris", "normal"]) ||
+          get_in(card.data, ["card_faces", Access.at(0), "image_uris", "normal"])
     end
   end
 
@@ -253,8 +259,8 @@ defmodule GoodtapWeb.DeckLive do
           <% else %>
             <div class="flex flex-wrap gap-3">
               <%= for dc <- Enum.sort_by(cards, & &1.card_name) do %>
-                <% img = card_image_url(dc.card_name, dc.printing_id) %>
-                <% card = Catalog.get_card_by_name(dc.card_name) %>
+                <% card = Map.get(@card_map, dc.card_name) %>
+                <% img = card_image_url_from_card(card, dc.printing_id) %>
                 <div class="flex flex-col items-center gap-1 relative group w-24">
                   <div class="relative w-full">
                     <img
