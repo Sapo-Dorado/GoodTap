@@ -231,7 +231,14 @@ defmodule GoodtapWeb.GameLive do
     has_selection = not MapSet.equal?(selected, MapSet.new())
     is_my_card = not is_nil(id) and owner == my_role
 
-    valid_actions = if is_my_card, do: Hotkeys.valid_actions_for(zone), else: []
+    is_find_mode = match?({_, _, %{find: true}}, socket.assigns.open_zone)
+
+    valid_actions =
+      cond do
+        is_find_mode and is_my_card -> [:move_to_graveyard, :move_to_exile, :move_to_hand, :move_to_deck_top, :move_to_deck_bottom, :move_to_battlefield]
+        is_my_card -> Hotkeys.valid_actions_for(zone)
+        true -> []
+      end
     valid_opponent_actions = if not is_nil(id) and owner != nil and owner != my_role, do: Hotkeys.valid_actions_for_opponent_battlefield(), else: []
     action_allowed? = fn action -> action in valid_actions or action in valid_opponent_actions end
 
@@ -276,7 +283,7 @@ defmodule GoodtapWeb.GameLive do
       true ->
         cond do
           # ── Deck top-card shortcuts ────────────────────────────────────
-          key == k.key_for(:move_to_graveyard) and :draw_top_to in valid_actions ->
+          key == k.key_for(:move_to_graveyard) and :draw_top_to in valid_actions and not is_find_mode ->
             apply_action(socket, fn st, p ->
               top = List.first(get_in(st, [p, "zones", "deck"]) || [])
               with {:ok, new_st} <- Actions.draw_top_to(st, p, "graveyard") do
@@ -284,7 +291,7 @@ defmodule GoodtapWeb.GameLive do
               end
             end)
 
-          key == k.key_for(:move_to_exile) and :draw_top_to in valid_actions ->
+          key == k.key_for(:move_to_exile) and :draw_top_to in valid_actions and not is_find_mode ->
             apply_action(socket, fn st, p ->
               top = List.first(get_in(st, [p, "zones", "deck"]) || [])
               with {:ok, new_st} <- Actions.draw_top_to(st, p, "exile") do
@@ -292,7 +299,7 @@ defmodule GoodtapWeb.GameLive do
               end
             end)
 
-          key == k.key_for(:move_to_battlefield) and :draw_top_to in valid_actions ->
+          key == k.key_for(:move_to_battlefield) and :draw_top_to in valid_actions and not is_find_mode ->
             apply_action(socket, fn st, p ->
               top = List.first(get_in(st, [p, "zones", "deck"]) || [])
               with {:ok, new_st} <- Actions.draw_top_to(st, p, "battlefield") do
@@ -300,7 +307,7 @@ defmodule GoodtapWeb.GameLive do
               end
             end)
 
-          key == k.key_for(:move_to_hand) and :draw_top_to in valid_actions ->
+          key == k.key_for(:move_to_hand) and :draw_top_to in valid_actions and not is_find_mode ->
             apply_action(socket, fn st, p ->
               top = List.first(get_in(st, [p, "zones", "deck"]) || [])
               name = if top && all_know?(st, top), do: top["name"], else: "a card"
@@ -312,9 +319,10 @@ defmodule GoodtapWeb.GameLive do
           # ── Single-card actions ────────────────────────────────────────
           # For pile zones (graveyard/exile/deck), resolve_pile_id always uses the
           # current top card so rapid keypresses each act on a different card.
+          # Exception: in find mode the user is hovering a specific card, use it directly.
           key == k.key_for(:move_to_graveyard) and not is_nil(id) and :move_to_graveyard in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id)
+              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
               with {:ok, new_st} <- Actions.move_to_graveyard(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → graveyard")}
               end
@@ -322,7 +330,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_exile) and not is_nil(id) and :move_to_exile in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id)
+              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
               with {:ok, new_st} <- Actions.move_to_exile(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → exile")}
               end
@@ -346,7 +354,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_deck_top) and not is_nil(id) and :move_to_deck_top in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id)
+              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
               with {:ok, new_st} <- Actions.move_to_deck(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → deck (top)")}
               end
@@ -354,7 +362,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_deck_bottom) and not is_nil(id) and :move_to_deck_bottom in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id)
+              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
               with {:ok, new_st} <- Actions.move_to_deck_bottom(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → deck (bottom)")}
               end
@@ -362,7 +370,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_hand) and not is_nil(id) and :move_to_hand in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id)
+              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
               with {:ok, new_st} <- Actions.move_to_hand(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → hand")}
               end
@@ -370,7 +378,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_battlefield) and not is_nil(id) and :move_to_battlefield in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id)
+              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
               with {:ok, new_st} <- Actions.move_to_battlefield(st, p, eid, zone, 0.5, 0.5) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → battlefield")}
               end
@@ -1380,13 +1388,15 @@ defmodule GoodtapWeb.GameLive do
   # instance_id, but rapid keypresses will re-send the same id before the server has
   # responded. Resolve to the actual current top card so every event acts on a
   # different card regardless of what id arrived.
-  defp resolve_pile_id(state, player, zone, _client_id) when zone in ["graveyard", "exile", "deck"] do
+  defp resolve_pile_id(state, player, zone, client_id, find_mode \\ false)
+  defp resolve_pile_id(_state, _player, _zone, client_id, true), do: client_id
+  defp resolve_pile_id(state, player, zone, _client_id, false) when zone in ["graveyard", "exile", "deck"] do
     case get_in(state, [player, "zones", zone]) do
       [top | _] -> top["instance_id"]
       _ -> nil
     end
   end
-  defp resolve_pile_id(_state, _player, _zone, client_id), do: client_id
+  defp resolve_pile_id(_state, _player, _zone, client_id, _find_mode), do: client_id
 
   defp card_name_from_state(state, player, instance_id) do
     all_zones = ["battlefield", "graveyard", "exile", "hand", "deck"]
@@ -2130,7 +2140,7 @@ defmodule GoodtapWeb.GameLive do
                 end
               %>
               <%= for card <- cards do %>
-                <% display_card = if is_find, do: Map.put(card, "known", %{"host" => true, "opponent" => true}), else: card %>
+                <% display_card = if is_find, do: put_in(card, ["known", @my_role], true), else: card %>
                 <div
                   class="shrink-0 cursor-pointer hover:scale-105 transition-transform"
                   data-draggable="true"
