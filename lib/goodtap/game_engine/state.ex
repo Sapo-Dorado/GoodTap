@@ -285,7 +285,7 @@ defmodule Goodtap.GameEngine.State do
   """
   def card_display_url(card_instance, viewer_role, owner_role, zone) do
     cond do
-      hidden_from_viewer?(viewer_role, owner_role, zone) ->
+      zone == "hand" and viewer_role != owner_role and not known_to?(card_instance, viewer_role) ->
         card_back_url()
 
       zone == "deck" and not known_to?(card_instance, viewer_role) ->
@@ -302,7 +302,5 @@ defmodule Goodtap.GameEngine.State do
     end
   end
 
-  defp hidden_from_viewer?(viewer_role, owner_role, zone) do
-    viewer_role != owner_role and zone == "hand"
-  end
+
 end
