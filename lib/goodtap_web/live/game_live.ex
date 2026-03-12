@@ -71,6 +71,7 @@ defmodule GoodtapWeb.GameLive do
          # Sideboarding
          sideboard_modal: sideboarding,
          sideboard_deck: sideboard_deck,
+         sideboard_card_map: sideboard_card_map(sideboard_deck),
          sideboard_pending: [],
          # Multi-card selection
          selected_cards: MapSet.new(),
@@ -105,7 +106,7 @@ defmodule GoodtapWeb.GameLive do
     sideboard_deck = build_sideboard_deck(game.game_state, socket.assigns.my_role)
     opponent_roles = Games.player_keys(game) |> Enum.reject(&(&1 == socket.assigns.my_role))
     viewed_opponent = socket.assigns.viewed_opponent || List.first(opponent_roles)
-    {:noreply, assign(socket, game: game, game_state: game.game_state, sideboard_modal: true, sideboard_deck: sideboard_deck, sideboard_pending: [], opponent_roles: opponent_roles, viewed_opponent: viewed_opponent)}
+    {:noreply, assign(socket, game: game, game_state: game.game_state, sideboard_modal: true, sideboard_deck: sideboard_deck, sideboard_card_map: sideboard_card_map(sideboard_deck), sideboard_pending: [], opponent_roles: opponent_roles, viewed_opponent: viewed_opponent)}
   end
 
   def handle_info({:game_restarted, game}, socket) do
@@ -1086,6 +1087,7 @@ defmodule GoodtapWeb.GameLive do
       end_game_modal: false,
       sideboard_modal: true,
       sideboard_deck: sideboard_deck,
+      sideboard_card_map: sideboard_card_map(sideboard_deck),
       sideboard_pending: []
     )}
   end
@@ -1094,13 +1096,15 @@ defmodule GoodtapWeb.GameLive do
     # Reset to original DB decklist
     deck_id = get_in(socket.assigns.game_state, [socket.assigns.my_role, "deck_id"])
     sideboard_deck = if deck_id, do: Decks.get_deck_with_cards!(deck_id), else: nil
-    {:noreply, assign(socket, sideboard_deck: sideboard_deck)}
+    {:noreply, assign(socket, sideboard_deck: sideboard_deck, sideboard_card_map: sideboard_card_map(sideboard_deck))}
   end
 
-  def handle_event("sideboard_move", %{"id" => id, "to_board" => to_board}, socket) do
-    # Move one copy in memory only — never touch the DB
+  def handle_event("sideboard_move", %{"id" => id, "to_board" => to_board} = params, socket) do
+    # Move N copies in memory only — never touch the DB.
+    # count is provided by SideboardButton hook (batched clicks); defaults to 1.
     # IDs are compared as strings since they come from the template as strings
     # and synthetic entries may have non-integer ids like "new_123".
+    count = String.to_integer(params["count"] || "1")
     deck = socket.assigns.sideboard_deck
     cards = deck.deck_cards
 
@@ -1108,17 +1112,18 @@ defmodule GoodtapWeb.GameLive do
 
     updated_cards =
       if source_card do
+        move_qty = min(count, source_card.quantity)
         dest_card = Enum.find(cards, &(&1.card_name == source_card.card_name && &1.board == to_board))
 
         cards
         |> Enum.map(fn dc ->
           cond do
-            to_string(dc.id) == id && dc.quantity > 1 ->
-              %{dc | quantity: dc.quantity - 1}
+            to_string(dc.id) == id && dc.quantity > move_qty ->
+              %{dc | quantity: dc.quantity - move_qty}
             to_string(dc.id) == id ->
               nil  # remove entirely
             dest_card && dc.id == dest_card.id ->
-              %{dc | quantity: dc.quantity + 1}
+              %{dc | quantity: dc.quantity + move_qty}
             true ->
               dc
           end
@@ -1128,7 +1133,7 @@ defmodule GoodtapWeb.GameLive do
           if dest_card do
             cs
           else
-            cs ++ [%{source_card | id: "new_#{source_card.id}", board: to_board, quantity: 1}]
+            cs ++ [%{source_card | id: "new_#{source_card.id}", board: to_board, quantity: move_qty}]
           end
         end)
       else
@@ -1200,6 +1205,26 @@ defmodule GoodtapWeb.GameLive do
   # Uses the card list from the previous sideboard (stored in game_state) if available,
   # so successive sideboards start from where the last one ended.
   # Falls back to the original DB deck on first sideboard.
+  defp sideboard_card_img(card_map, card_name, printing_id \\ nil) do
+    case Map.get(card_map, card_name) do
+      nil -> nil
+      card ->
+        printing = if printing_id, do: Enum.find(card.printings || [], &(&1["id"] == printing_id))
+        cond do
+          printing -> get_in(printing, ["image_uris", "normal"])
+          true ->
+            get_in(card.data, ["image_uris", "normal"]) ||
+              get_in(card.data, ["card_faces", Access.at(0), "image_uris", "normal"])
+        end
+    end
+  end
+
+  defp sideboard_card_map(nil), do: %{}
+  defp sideboard_card_map(deck) do
+    names = Enum.map(deck.deck_cards, & &1.card_name) |> Enum.uniq()
+    Catalog.list_cards_by_names(names) |> Map.new(&{&1.name, &1})
+  end
+
   defp build_sideboard_deck(game_state, my_role) do
     card_lists = get_in(game_state, ["sideboard_card_lists", my_role])
 
@@ -1225,7 +1250,12 @@ defmodule GoodtapWeb.GameLive do
       original_main =
         original_deck.deck_cards
         |> Enum.filter(&(&1.board == "main"))
-        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, dc.quantity) end)
+        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, {dc.quantity, dc.printing_id}) end)
+
+      # printing_id lookup by card name (prefer main, fall back to side)
+      printing_ids =
+        original_deck.deck_cards
+        |> Enum.reduce(%{}, fn dc, acc -> Map.put_new(acc, dc.card_name, dc.printing_id) end)
 
       # For each card name that appears across main+side, compute current allocation
       all_names =
@@ -1234,15 +1264,16 @@ defmodule GoodtapWeb.GameLive do
       deck_cards =
         all_names
         |> Enum.flat_map(fn name ->
-          orig_main = Map.get(original_main, name, 0)
+          {orig_main_qty, _} = Map.get(original_main, name, {0, nil})
           orig_side = Map.get(original_side, name, 0)
-          total = orig_main + orig_side
+          total = orig_main_qty + orig_side
           cur_main = Map.get(main_counts, name, 0)
           cur_side = total - cur_main
+          printing_id = Map.get(printing_ids, name)
 
           entries = []
-          entries = if cur_main > 0, do: entries ++ [%{id: :erlang.phash2({name, "main"}), card_name: name, board: "main", quantity: cur_main}], else: entries
-          entries = if cur_side > 0, do: entries ++ [%{id: :erlang.phash2({name, "sideboard"}), card_name: name, board: "sideboard", quantity: cur_side}], else: entries
+          entries = if cur_main > 0, do: entries ++ [%{id: :erlang.phash2({name, "main"}), card_name: name, board: "main", quantity: cur_main, printing_id: printing_id}], else: entries
+          entries = if cur_side > 0, do: entries ++ [%{id: :erlang.phash2({name, "sideboard"}), card_name: name, board: "sideboard", quantity: cur_side, printing_id: printing_id}], else: entries
           entries
         end)
 
@@ -1250,7 +1281,7 @@ defmodule GoodtapWeb.GameLive do
         commander_names
         |> Enum.frequencies()
         |> Enum.map(fn {name, qty} ->
-          %{id: :erlang.phash2({name, "commander"}), card_name: name, board: "commander", quantity: qty}
+          %{id: :erlang.phash2({name, "commander"}), card_name: name, board: "commander", quantity: qty, printing_id: Map.get(printing_ids, name)}
         end)
 
       %{id: deck_id, deck_cards: commander_entries ++ deck_cards}
@@ -2425,7 +2456,7 @@ defmodule GoodtapWeb.GameLive do
         <% side_cards = Enum.filter(@sideboard_deck.deck_cards, &(&1.board == "sideboard")) |> Enum.sort_by(& &1.card_name) %>
         <% already_submitted = get_in(@game.game_state, ["sideboard_ready", @my_role]) == true %>
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div class="bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+          <div id="sideboard-modal" phx-hook="CardPreview" class="bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-xl font-bold">Sideboarding</h2>
               <%= if already_submitted do %>
@@ -2441,16 +2472,21 @@ defmodule GoodtapWeb.GameLive do
                 <h3 class="text-sm font-semibold text-gray-400 mb-2">Main Deck ({Enum.sum(Enum.map(main_cards, & &1.quantity))})</h3>
                 <div class="overflow-y-auto flex-1 space-y-0.5">
                   <%= for dc <- main_cards do %>
+                    <% card_img = sideboard_card_img(@sideboard_card_map, dc.card_name, dc.printing_id) %>
                     <div class="flex items-center gap-2 text-sm py-0.5">
                       <span class="text-gray-400 w-6 text-right shrink-0 tabular-nums">{dc.quantity}x</span>
-                      <span class="flex-1 text-white truncate">{dc.card_name}</span>
+                      <span
+                        class="flex-1 text-white truncate"
+                        data-card-img={card_img}
+                      >{dc.card_name}</span>
                       <%= if !already_submitted do %>
                         <button
-                          phx-click="sideboard_move"
-                          phx-value-id={dc.id}
-                          phx-value-to_board="sideboard"
-                          class="text-xs bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white px-2 py-0.5 rounded shrink-0"
-                          title="Move 1 to sideboard"
+                          phx-hook="SideboardButton"
+                          id={"sb-main-#{dc.id}"}
+                          data-id={dc.id}
+                          data-to-board="sideboard"
+                          class="text-xs bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white px-2 py-0.5 rounded shrink-0 cursor-pointer"
+                          title="Move to sideboard"
                         >→</button>
                       <% end %>
                     </div>
@@ -2463,18 +2499,23 @@ defmodule GoodtapWeb.GameLive do
                 <h3 class="text-sm font-semibold text-gray-400 mb-2">Sideboard ({Enum.sum(Enum.map(side_cards, & &1.quantity))})</h3>
                 <div class="overflow-y-auto flex-1 space-y-0.5">
                   <%= for dc <- side_cards do %>
+                    <% card_img = sideboard_card_img(@sideboard_card_map, dc.card_name, dc.printing_id) %>
                     <div class="flex items-center gap-2 text-sm py-0.5">
                       <%= if !already_submitted do %>
                         <button
-                          phx-click="sideboard_move"
-                          phx-value-id={dc.id}
-                          phx-value-to_board="main"
-                          class="text-xs bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white px-2 py-0.5 rounded shrink-0"
-                          title="Move 1 to main deck"
+                          phx-hook="SideboardButton"
+                          id={"sb-side-#{dc.id}"}
+                          data-id={dc.id}
+                          data-to-board="main"
+                          class="text-xs bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white px-2 py-0.5 rounded shrink-0 cursor-pointer"
+                          title="Move to main deck"
                         >←</button>
                       <% end %>
                       <span class="text-gray-400 w-6 text-right shrink-0 tabular-nums">{dc.quantity}x</span>
-                      <span class="flex-1 text-white truncate">{dc.card_name}</span>
+                      <span
+                        class="flex-1 text-white truncate"
+                        data-card-img={card_img}
+                      >{dc.card_name}</span>
                     </div>
                   <% end %>
                 </div>

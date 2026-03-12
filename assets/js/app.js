@@ -12,6 +12,7 @@ import Battlefield from "./hooks/battlefield"
 import CounterButton from "./hooks/counter_button"
 import CardPreview from "./hooks/card_preview"
 import DeckCardMenu from "./hooks/deck_card_menu"
+import SideboardButton from "./hooks/sideboard_button"
 
 const ScrollBottom = {
   mounted() { this.el.scrollTop = this.el.scrollHeight; },
@@ -25,6 +26,7 @@ const Hooks = {
   CounterButton,
   CardPreview,
   DeckCardMenu,
+  SideboardButton,
   ScrollBottom,
 }
 

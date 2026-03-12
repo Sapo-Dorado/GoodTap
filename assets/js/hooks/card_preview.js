@@ -2,6 +2,7 @@ const CardPreview = {
   mounted() {
     this.panel = document.getElementById("card-preview-panel");
     this.img = document.getElementById("card-preview-img");
+    this.currentEl = null;
     this.currentSrc = null;
 
     this.onOver = (e) => {
@@ -10,6 +11,7 @@ const CardPreview = {
       const src = el.dataset.cardImg;
       if (!src || !this.panel || !this.img) return;
 
+      this.currentEl = el;
       this.currentSrc = src;
       this.img.src = src;
       const rect = el.getBoundingClientRect();
@@ -27,6 +29,7 @@ const CardPreview = {
 
     this.onOut = (e) => {
       if (!e.target.closest("[data-card-img]")) return;
+      this.currentEl = null;
       this.currentSrc = null;
       if (this.panel) this.panel.style.display = "none";
     };
@@ -36,11 +39,12 @@ const CardPreview = {
   },
 
   updated() {
-    // After a LiveView patch, the hovered card may have disappeared (e.g. search
-    // results changed while mouse was hovering). Hide preview if its card is gone.
-    if (!this.currentSrc || !this.panel) return;
-    const still_present = this.el.querySelector(`[data-card-img="${this.currentSrc}"]`);
-    if (!still_present) {
+    // After a LiveView patch, hide preview only if the specific hovered element
+    // is gone from the DOM (e.g. search results changed). Don't hide if the element
+    // still exists — opponent actions should not interrupt your hover preview.
+    if (!this.currentEl || !this.panel) return;
+    if (!document.contains(this.currentEl)) {
+      this.currentEl = null;
       this.currentSrc = null;
       this.panel.style.display = "none";
     }

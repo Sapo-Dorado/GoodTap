@@ -22,7 +22,12 @@
       "Bash(npm install:*)",
       "Bash(npm test:*)",
       "Bash(git checkout:*)",
-      "Bash(cat > /Users/nicholas/Documents/goodtap/priv/repo/migrations/20260311000001_add_unique_name_to_decks.exs << 'EOF'\ndefmodule Goodtap.Repo.Migrations.AddUniqueNameToDecks do\n  use Ecto.Migration\n\n  def change do\n    create unique_index\\(:decks, [:user_id, :name]\\)\n  end\nend\nEOF)"
+      "Bash(cat > /Users/nicholas/Documents/goodtap/priv/repo/migrations/20260311000001_add_unique_name_to_decks.exs << 'EOF'\ndefmodule Goodtap.Repo.Migrations.AddUniqueNameToDecks do\n  use Ecto.Migration\n\n  def change do\n    create unique_index\\(:decks, [:user_id, :name]\\)\n  end\nend\nEOF)",
+      "Bash(awk 'NR>=1433 && NR<=2500' /Users/nicholas/Documents/goodtap/lib/goodtap_web/live/game_live.ex | grep -n \"phx-hook.*CardPreview\\\\|card-preview\\\\|data-card-img\")",
+      "Bash(awk 'NR>=1440 && NR<=1447' /Users/nicholas/Documents/goodtap/lib/goodtap_web/live/game_live.ex)",
+      "Bash(awk 'NR>=1440 && NR<=1448' /Users/nicholas/Documents/goodtap/lib/goodtap_web/live/game_live.ex)",
+      "Bash(awk 'NR>=1440 && NR<=1450' /Users/nicholas/Documents/goodtap/lib/goodtap_web/live/game_live.ex | cat -n)",
+      "Bash(awk 'NR>=1440 && NR<=1445' /Users/nicholas/Documents/goodtap/lib/goodtap_web/live/game_live.ex)"
     ]
   }
 }
