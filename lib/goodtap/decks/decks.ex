@@ -14,6 +14,13 @@ defmodule Goodtap.Decks do
 
   def get_deck!(id), do: Repo.get!(Deck, id)
 
+  def get_deck_with_cards(id) do
+    case Repo.get(Deck, id) do
+      nil -> nil
+      deck -> Repo.preload(deck, :deck_cards)
+    end
+  end
+
   def get_deck_with_cards!(id) do
     Deck
     |> Repo.get!(id)

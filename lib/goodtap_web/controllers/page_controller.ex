@@ -8,4 +8,8 @@ defmodule GoodtapWeb.PageController do
       render(conn, :home)
     end
   end
+
+  def not_found(conn, _params) do
+    conn |> redirect(to: ~p"/") |> halt()
+  end
 end

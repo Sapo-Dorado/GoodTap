@@ -6,11 +6,15 @@ defmodule GoodtapWeb.DeckLive do
 
   def mount(%{"id" => id}, _session, socket) do
     user = socket.assigns.current_scope.user
-    deck = Decks.get_deck_with_cards!(id)
 
-    if deck.user_id != user.id do
-      {:ok, push_navigate(socket, to: ~p"/decks")}
-    else
+    case Decks.get_deck_with_cards(id) do
+      nil ->
+        {:ok, push_navigate(socket, to: ~p"/")}
+
+      deck when deck.user_id != user.id ->
+        {:ok, push_navigate(socket, to: ~p"/decks")}
+
+      deck ->
       not_found = get_in(socket.assigns, [:flash, "not_found_cards"]) || []
 
       {:ok,
