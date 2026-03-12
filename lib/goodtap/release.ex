@@ -32,7 +32,7 @@ defmodule Goodtap.Release do
     for repo <- repos() do
       {:ok, _, _} =
         Ecto.Migrator.with_repo(repo, fn repo ->
-          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE deck_cards, decks, games, cards")
+          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE deck_cards, decks, game_players, games, cards")
         end)
     end
 
@@ -47,7 +47,7 @@ defmodule Goodtap.Release do
     for repo <- repos() do
       {:ok, _, _} =
         Ecto.Migrator.with_repo(repo, fn repo ->
-          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE games, cards")
+          Ecto.Adapters.SQL.query!(repo, "TRUNCATE TABLE game_players, games, cards")
         end)
     end
 
