@@ -20,5 +20,6 @@ defmodule Goodtap.Decks.Deck do
     |> cast(attrs, [:name, :source_url, :user_id])
     |> validate_required([:name, :user_id])
     |> validate_length(:name, max: 100)
+    |> unique_constraint(:name, name: :decks_user_id_name_index, message: "you already have a deck with that name")
   end
 end

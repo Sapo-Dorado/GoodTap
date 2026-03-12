@@ -4,10 +4,10 @@ defmodule GoodtapWeb.DeckLive do
   alias Goodtap.Decks
   alias Goodtap.Catalog
 
-  def mount(%{"id" => id}, _session, socket) do
+  def mount(%{"username" => username, "name" => name}, _session, socket) do
     user = socket.assigns.current_scope.user
 
-    case Decks.get_deck_with_cards(id) do
+    case Decks.get_deck_with_cards_by_slug(username, name) do
       nil ->
         {:ok, push_navigate(socket, to: ~p"/")}
 

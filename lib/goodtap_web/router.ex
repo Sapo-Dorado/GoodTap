@@ -59,14 +59,6 @@ defmodule GoodtapWeb.Router do
     delete "/users/log-out", UserSessionController, :delete
   end
 
-  ## Catch-all — redirect unknown routes to home
-
-  scope "/", GoodtapWeb do
-    pipe_through :browser
-
-    get "/*path", PageController, :not_found
-  end
-
   ## Game and Deck routes (require authentication)
 
   scope "/", GoodtapWeb do
@@ -78,7 +70,7 @@ defmodule GoodtapWeb.Router do
       live "/games/:id/setup", GameSetupLive, :show
       live "/games/join/:token", GameJoinLive, :show
       live "/decks", DeckListLive, :index
-      live "/decks/:id", DeckLive, :show
+      live "/decks/:username/:name", DeckLive, :show
     end
 
     live_session :game,

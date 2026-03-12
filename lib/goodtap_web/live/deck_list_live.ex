@@ -35,13 +35,17 @@ defmodule GoodtapWeb.DeckListLive do
 
     case Decks.create_deck_from_text(user, String.trim(name), String.trim(text)) do
       {:ok, deck, []} ->
-        {:noreply, push_navigate(socket, to: ~p"/decks/#{deck.id}")}
+        {:noreply, push_navigate(socket, to: ~p"/decks/#{user.username}/#{deck.name}")}
 
       {:ok, deck, not_found} ->
         {:noreply,
          socket
          |> put_flash(:not_found_cards, not_found)
-         |> push_navigate(to: ~p"/decks/#{deck.id}")}
+         |> push_navigate(to: ~p"/decks/#{user.username}/#{deck.name}")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        msg = changeset |> Ecto.Changeset.traverse_errors(fn {m, _} -> m end) |> format_changeset_errors()
+        {:noreply, assign(socket, import_error: msg, importing: false)}
 
       {:error, reason} ->
         {:noreply, assign(socket, import_error: reason, importing: false)}
@@ -49,6 +53,12 @@ defmodule GoodtapWeb.DeckListLive do
   end
 
   def handle_event("noop", _params, socket), do: {:noreply, socket}
+
+  defp format_changeset_errors(errors) do
+    errors
+    |> Enum.map(fn {field, msgs} -> "#{field}: #{Enum.join(msgs, ", ")}" end)
+    |> Enum.join("; ")
+  end
 
   # ─── Delete Deck ──────────────────────────────────────────────────────────
 
@@ -84,7 +94,7 @@ defmodule GoodtapWeb.DeckListLive do
         <%= for deck <- @decks do %>
           <div class="bg-gray-800 rounded-lg p-4 flex items-center justify-between">
             <.link
-              navigate={~p"/decks/#{deck.id}"}
+              navigate={~p"/decks/#{@current_scope.user.username}/#{deck.name}"}
               class="flex-1 hover:text-white transition-colors"
             >
               <div class="font-medium">{deck.name}</div>

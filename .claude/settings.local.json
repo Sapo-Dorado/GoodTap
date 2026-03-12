@@ -21,7 +21,8 @@
       "Bash(ls:*)",
       "Bash(npm install:*)",
       "Bash(npm test:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(cat > /Users/nicholas/Documents/goodtap/priv/repo/migrations/20260311000001_add_unique_name_to_decks.exs << 'EOF'\ndefmodule Goodtap.Repo.Migrations.AddUniqueNameToDecks do\n  use Ecto.Migration\n\n  def change do\n    create unique_index\\(:decks, [:user_id, :name]\\)\n  end\nend\nEOF)"
     ]
   }
 }

@@ -21,6 +21,17 @@ defmodule Goodtap.Decks do
     end
   end
 
+  def get_deck_with_cards_by_slug(username, deck_name) do
+    query =
+      from d in Deck,
+        join: u in Goodtap.Accounts.User,
+        on: u.id == d.user_id,
+        where: u.username == ^username and d.name == ^deck_name,
+        preload: :deck_cards
+
+    Repo.one(query)
+  end
+
   def get_deck_with_cards!(id) do
     Deck
     |> Repo.get!(id)
