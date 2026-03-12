@@ -283,7 +283,7 @@ defmodule Goodtap.GameEngine.ActionsTest do
   # ─── Mulligan ─────────────────────────────────────────────────────────────
 
   describe "mulligan/2" do
-    test "clears known state for all cards, redraws 7" do
+    test "redraws 7 cards into hand, leaves 3 in deck" do
       known_cards = for i <- 1..10 do
         card(%{"instance_id" => "c#{i}", "known" => %{"p1" => true, "p2" => true}})
       end
@@ -293,11 +293,44 @@ defmodule Goodtap.GameEngine.ActionsTest do
         |> with_cards_in("p1", "deck", Enum.drop(known_cards, 3))
 
       {:ok, new_state} = Actions.mulligan(state, "p1")
+      assert length(cards_in(new_state, "p1", "hand")) == 7
+      assert length(cards_in(new_state, "p1", "deck")) == 3
+    end
+
+    test "new hand cards are known to the drawing player" do
+      cards = for i <- 1..10, do: card(%{"instance_id" => "c#{i}"})
+      state =
+        game_state()
+        |> with_cards_in("p1", "hand", Enum.take(cards, 3))
+        |> with_cards_in("p1", "deck", Enum.drop(cards, 3))
+
+      {:ok, new_state} = Actions.mulligan(state, "p1")
       hand = cards_in(new_state, "p1", "hand")
+      assert Enum.all?(hand, &State.known_to?(&1, "p1")), "each new hand card should be known to p1"
+    end
+
+    test "new hand cards are not known to the opponent" do
+      cards = for i <- 1..10, do: card(%{"instance_id" => "c#{i}"})
+      state =
+        game_state()
+        |> with_cards_in("p1", "hand", Enum.take(cards, 3))
+        |> with_cards_in("p1", "deck", Enum.drop(cards, 3))
+
+      {:ok, new_state} = Actions.mulligan(state, "p1")
+      hand = cards_in(new_state, "p1", "hand")
+      refute Enum.any?(hand, &State.known_to?(&1, "p2")), "no new hand card should be known to p2"
+    end
+
+    test "deck cards after mulligan are not known to either player" do
+      cards = for i <- 1..10, do: card(%{"instance_id" => "c#{i}"})
+      state =
+        game_state()
+        |> with_cards_in("p1", "hand", Enum.take(cards, 3))
+        |> with_cards_in("p1", "deck", Enum.drop(cards, 3))
+
+      {:ok, new_state} = Actions.mulligan(state, "p1")
       deck = cards_in(new_state, "p1", "deck")
-      assert length(hand) == 7
-      assert length(deck) == 3
-      assert Enum.all?(hand ++ deck, &known_to_neither?/1)
+      assert Enum.all?(deck, &known_to_neither?/1)
     end
   end
 

@@ -66,8 +66,18 @@ defmodule Goodtap.GameEngine.StateTest do
     end
 
     test "opponent cannot see owner's hand card — shows card back" do
-      c = card_with_images()
+      c = card_with_images(%{"known" => %{"p1" => true, "p2" => false}})
       assert State.card_display_url(c, "p2", "p1", "hand") == State.card_back_url()
+    end
+
+    test "opponent can see a hand card that was revealed to them" do
+      c = card_with_images(%{"known" => %{"p1" => true, "p2" => true}})
+      assert State.card_display_url(c, "p2", "p1", "hand") == @front_url
+    end
+
+    test "third player cannot see a hand card revealed only to p2" do
+      c = card_with_images(%{"known" => %{"p1" => true, "p2" => true, "p3" => false}})
+      assert State.card_display_url(c, "p3", "p1", "hand") == State.card_back_url()
     end
 
     test "face-down card shows back regardless of zone or knowledge" do
