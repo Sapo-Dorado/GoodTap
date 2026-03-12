@@ -67,10 +67,8 @@ const DragDrop = {
       if (!card) {
         const bf = e.target.closest("#battlefield");
         if (bf && !e.target.closest("[data-pile-zone]")) {
-          const bfRect = bf.getBoundingClientRect();
-          const inMyHalf = e.clientY > bfRect.top + bfRect.height / 2;
-          this.pushEvent("clear_selection", {});
-          if (inMyHalf) this.startLasso(bf, e);
+            this.pushEvent("clear_selection", {});
+          this.startLasso(bf, e);
         } else {
           this.pushEvent("clear_selection", {});
         }
