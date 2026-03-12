@@ -355,6 +355,7 @@ defmodule Goodtap.GameEngine.Actions do
       |> Enum.shuffle()
 
     {new_hand, new_deck} = Enum.split(new_deck, 7)
+    new_hand = Enum.map(new_hand, &mark_known_to(&1, player))
 
     state =
       state
