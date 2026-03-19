@@ -482,8 +482,8 @@ const DragDrop = {
           const stayingOnOwnSide = inMyHalf2 && card.id.startsWith("card-");
 
           if (stayingOnOwnSide) {
-            card.style.left = Math.trunc(relX * 100) + "%";
-            card.style.top = Math.trunc(relY * 100) + "%";
+            card.style.left = (Math.round(relX * 10000) / 100) + "%";
+            card.style.top = (Math.round(relY * 10000) / 100) + "%";
           }
           card.style.zIndex = nextLocalZ();
           card.style.opacity = ""; card.style.pointerEvents = "";
@@ -499,8 +499,8 @@ const DragDrop = {
             for (const { el, origXPct: ox, origYPct: oy } of this.extraGhosts) {
               const nx = Math.max(0, Math.min(0.98, ox + dx));
               const ny = Math.max(0, Math.min(0.98, oy + dy));
-              el.style.left = Math.trunc(nx * 100) + "%";
-              el.style.top = Math.trunc(ny * 100) + "%";
+              el.style.left = (Math.round(nx * 10000) / 100) + "%";
+              el.style.top = (Math.round(ny * 10000) / 100) + "%";
               el.style.zIndex = nextLocalZ();
               el.style.opacity = ""; el.style.pointerEvents = "";
             }
@@ -552,8 +552,8 @@ const DragDrop = {
             const el = document.createElement("div");
             el.id = `card-${instanceId}`;
             el.className = "card-on-battlefield absolute cursor-pointer transition-transform";
-            el.style.left = Math.trunc(relX * 100) + "%";
-            el.style.top = Math.trunc(relY * 100) + "%";
+            el.style.left = (Math.round(relX * 10000) / 100) + "%";
+            el.style.top = (Math.round(relY * 10000) / 100) + "%";
             el.style.zIndex = nextLocalZ();
             el.setAttribute("data-draggable", "true");
             el.setAttribute("data-instance-id", instanceId);
@@ -642,7 +642,7 @@ const DragDrop = {
   },
 
   // Shift relX right by 1% steps until no other battlefield card occupies the same
-  // truncated position, or until the card's right edge would leave the battlefield.
+  // rounded position, or until the card's right edge would leave the battlefield.
   nudgeIfOccupied(relX, relY, excludeInstanceId) {
     const maxX = 95;
 
@@ -650,14 +650,13 @@ const DragDrop = {
       document.querySelectorAll(`[data-draggable][data-zone="battlefield"][data-owner="${this.myRole}"]`)
     ).filter(el => el.dataset.instanceId !== excludeInstanceId && el.style.opacity === "0");
 
-    // Use Math.round (not trunc) when reading back stored positions to avoid
-    // float round-trip errors (e.g. trunc(0.57 * 100) = 56, not 57).
+    // Compare at integer-percent granularity for nudge collision detection
     const occupied = new Set(cards.map(el =>
       `${Math.round(parseFloat(el.style.left))},${Math.round(parseFloat(el.style.top))}`
     ));
 
     const ty = Math.round(relY * 100);
-    const start = Math.trunc(relX * 100); // trunc for drop position matches server render
+    const start = Math.round(relX * 100);
 
     // Search rightward first
     let right = start;

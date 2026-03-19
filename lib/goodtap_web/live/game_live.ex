@@ -1594,8 +1594,8 @@ defmodule GoodtapWeb.GameLive do
             <%# Flipped: opponent card on their own battlefield OR on my battlefield.
                 Upright-not-interactable only when an opponent's card is on a third player's battlefield. %>
             <% flipped = not is_mine and (effective_bf == owner_key or effective_bf == @my_role) %>
-            <% cx = trunc((card["x"] || 0.5) * 100) %>
-            <% cy = trunc((card["y"] || 0.5) * 100) %>
+            <% cx = Float.round((card["x"] || 0.5) * 100, 2) %>
+            <% cy = Float.round((card["y"] || 0.5) * 100, 2) %>
             <%= if is_mine do %>
               <%!-- Upright + draggable: my own card --%>
               <div
