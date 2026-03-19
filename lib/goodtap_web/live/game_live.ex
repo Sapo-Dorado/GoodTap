@@ -233,6 +233,7 @@ defmodule GoodtapWeb.GameLive do
     is_my_card = not is_nil(id) and owner == my_role
 
     is_find_mode = match?({_, _, %{find: true}}, socket.assigns.open_zone)
+    zone_popup_open = socket.assigns.open_zone != nil
 
     valid_actions =
       cond do
@@ -323,7 +324,7 @@ defmodule GoodtapWeb.GameLive do
           # Exception: in find mode the user is hovering a specific card, use it directly.
           key == k.key_for(:move_to_graveyard) and not is_nil(id) and :move_to_graveyard in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
+              eid = resolve_pile_id(st, p, zone, id, zone_popup_open)
               with {:ok, new_st} <- Actions.move_to_graveyard(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → graveyard")}
               end
@@ -331,7 +332,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_exile) and not is_nil(id) and :move_to_exile in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
+              eid = resolve_pile_id(st, p, zone, id, zone_popup_open)
               with {:ok, new_st} <- Actions.move_to_exile(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → exile")}
               end
@@ -355,7 +356,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_deck_top) and not is_nil(id) and :move_to_deck_top in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
+              eid = resolve_pile_id(st, p, zone, id, zone_popup_open)
               with {:ok, new_st} <- Actions.move_to_deck(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → deck (top)")}
               end
@@ -363,7 +364,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_deck_bottom) and not is_nil(id) and :move_to_deck_bottom in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
+              eid = resolve_pile_id(st, p, zone, id, zone_popup_open)
               with {:ok, new_st} <- Actions.move_to_deck_bottom(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → deck (bottom)")}
               end
@@ -371,7 +372,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_hand) and not is_nil(id) and :move_to_hand in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
+              eid = resolve_pile_id(st, p, zone, id, zone_popup_open)
               with {:ok, new_st} <- Actions.move_to_hand(st, p, eid, zone) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → hand")}
               end
@@ -379,7 +380,7 @@ defmodule GoodtapWeb.GameLive do
 
           key == k.key_for(:move_to_battlefield) and not is_nil(id) and :move_to_battlefield in valid_actions ->
             apply_action(socket, fn st, p ->
-              eid = resolve_pile_id(st, p, zone, id, is_find_mode)
+              eid = resolve_pile_id(st, p, zone, id, zone_popup_open)
               with {:ok, new_st} <- Actions.move_to_battlefield(st, p, eid, zone, 0.5, 0.5) do
                 {:ok, append_log(new_st, p, "#{card_name_from_state(new_st, p, eid)} → battlefield")}
               end
@@ -1432,7 +1433,7 @@ defmodule GoodtapWeb.GameLive do
   # instance_id, but rapid keypresses will re-send the same id before the server has
   # responded. Resolve to the actual current top card so every event acts on a
   # different card regardless of what id arrived.
-  defp resolve_pile_id(state, player, zone, client_id, find_mode \\ false)
+  defp resolve_pile_id(state, player, zone, client_id, popup_open \\ false)
   defp resolve_pile_id(_state, _player, _zone, client_id, true), do: client_id
   defp resolve_pile_id(state, player, zone, _client_id, false) when zone in ["graveyard", "exile", "deck"] do
     case get_in(state, [player, "zones", zone]) do
@@ -1440,7 +1441,7 @@ defmodule GoodtapWeb.GameLive do
       _ -> nil
     end
   end
-  defp resolve_pile_id(_state, _player, _zone, client_id, _find_mode), do: client_id
+  defp resolve_pile_id(_state, _player, _zone, client_id, _popup_open), do: client_id
 
   defp card_name_from_state(state, player, instance_id) do
     all_zones = ["battlefield", "graveyard", "exile", "hand", "deck"]
@@ -2186,6 +2187,7 @@ defmodule GoodtapWeb.GameLive do
               <%= for card <- cards do %>
                 <% display_card = if is_find, do: put_in(card, ["known", @my_role], true), else: card %>
                 <div
+                  id={"zone-card-#{card["instance_id"]}"}
                   class="shrink-0 cursor-pointer hover:scale-105 transition-transform"
                   data-draggable="true"
                   data-instance-id={card["instance_id"]}
