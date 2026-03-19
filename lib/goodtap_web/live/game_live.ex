@@ -62,7 +62,7 @@ defmodule GoodtapWeb.GameLive do
          recent_tokens: user.recent_tokens,
          # Add counter
          adding_counter_to: nil,
-         counter_name_input: "",
+         counter_name_input: "", counter_has_quantity: true,
          recent_counters: user.recent_counters,
          # End game
          end_game_modal: false,
@@ -386,7 +386,7 @@ defmodule GoodtapWeb.GameLive do
             end)
 
           key == k.key_for(:add_counter) and not is_nil(id) and :add_counter in valid_actions ->
-            {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
+            {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "", counter_has_quantity: true)}
 
           key == k.key_for(:copy_card) and not is_nil(id) and action_allowed?.(:copy_card) ->
             if owner == my_role do
@@ -466,7 +466,7 @@ defmodule GoodtapWeb.GameLive do
   # ─── Card Actions ─────────────────────────────────────────────────────────
 
   def handle_event("action", %{"type" => "add_counter", "instance_id" => id}, socket) do
-    {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "", context_menu: nil)}
+    {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "", counter_has_quantity: true, context_menu: nil)}
   end
 
   def handle_event("action", %{"type" => "tap", "instance_id" => id}, socket) do
@@ -724,7 +724,7 @@ defmodule GoodtapWeb.GameLive do
   # ─── Counters ─────────────────────────────────────────────────────────────
 
   def handle_event("show_add_counter", %{"instance_id" => id}, socket) do
-    {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "")}
+    {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "", counter_has_quantity: true)}
   end
 
   def handle_event("add_counter", %{"name" => name} = params, socket) do
@@ -732,16 +732,19 @@ defmodule GoodtapWeb.GameLive do
     name = String.trim(name)
     has_quantity = params["has_quantity"] == "true"
 
-    if id && name != "" do
+    if id do
       socket = apply_action_inline(socket, fn state, player ->
         Actions.add_counter(state, player, id, name, has_quantity)
       end)
 
-      user = socket.assigns.current_scope.user
-      updated_user = Accounts.add_recent_counter(user, name, has_quantity)
-      updated_scope = %{socket.assigns.current_scope | user: updated_user}
-
-      {:noreply, assign(socket, adding_counter_to: nil, recent_counters: updated_user.recent_counters, current_scope: updated_scope)}
+      if name != "" do
+        user = socket.assigns.current_scope.user
+        updated_user = Accounts.add_recent_counter(user, name, has_quantity)
+        updated_scope = %{socket.assigns.current_scope | user: updated_user}
+        {:noreply, assign(socket, adding_counter_to: nil, recent_counters: updated_user.recent_counters, current_scope: updated_scope)}
+      else
+        {:noreply, assign(socket, adding_counter_to: nil)}
+      end
     else
       {:noreply, assign(socket, adding_counter_to: nil)}
     end
@@ -760,6 +763,12 @@ defmodule GoodtapWeb.GameLive do
     updated_scope = %{socket.assigns.current_scope | user: updated_user}
 
     {:noreply, assign(socket, adding_counter_to: nil, recent_counters: updated_user.recent_counters, current_scope: updated_scope)}
+  end
+
+  def handle_event("counter_form_change", params, socket) do
+    name = params["name"] || ""
+    has_quantity = params["has_quantity"] == "true"
+    {:noreply, assign(socket, counter_name_input: name, counter_has_quantity: has_quantity)}
   end
 
   def handle_event("cancel_add_counter", _params, socket) do
@@ -2354,23 +2363,25 @@ defmodule GoodtapWeb.GameLive do
               <% end %>
             </div>
           <% end %>
-          <form phx-submit="add_counter">
+          <% counter_valid = String.trim(@counter_name_input) != "" or @counter_has_quantity %>
+          <form phx-submit="add_counter" phx-change="counter_form_change">
             <input
               type="text"
               name="name"
-              value="+1/+1"
+              value={@counter_name_input}
+              placeholder="Add Label (Optional)"
               class="input input-bordered w-full bg-gray-700 mb-3"
               autofocus
             />
             <label class="flex items-center gap-2 text-sm text-gray-300 mb-4 cursor-pointer select-none">
-              <input type="checkbox" name="has_quantity" value="true" checked class="checkbox checkbox-sm" />
+              <input type="checkbox" name="has_quantity" value="true" checked={@counter_has_quantity} class="checkbox checkbox-sm" />
               Has quantity
             </label>
             <div class="flex gap-2 justify-end">
               <button type="button" phx-click="cancel_add_counter" class="btn btn-ghost btn-sm">
                 Cancel
               </button>
-              <button type="submit" class="btn btn-primary btn-sm">Add</button>
+              <button type="submit" class={["btn btn-primary btn-sm", if(!counter_valid, do: "btn-disabled opacity-50 pointer-events-none")]} disabled={!counter_valid}>Add</button>
             </div>
           </form>
         </div>
