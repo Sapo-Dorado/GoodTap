@@ -121,7 +121,16 @@ const DragDrop = {
       const imgEl = e.target.closest("[data-card-img]");
       if (!imgEl) return;
       if (!imgEl.contains(e.relatedTarget)) {
-        this.hidePreview();
+        // When LiveView patches the DOM, it replaces elements which triggers
+        // mouseout. Defer the hide so updated() can check if the card still
+        // exists under the cursor before we remove the preview.
+        this._previewHideTimeout = requestAnimationFrame(() => {
+          this._previewHideTimeout = null;
+          if (!this._previewKeep) {
+            this.hidePreview();
+          }
+          this._previewKeep = false;
+        });
       }
     };
 
@@ -190,6 +199,12 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
+    // After a LiveView patch, if the preview was visible and the card still
+    // exists in the DOM, keep the preview showing. This prevents flickering
+    // when the opponent takes an action.
+    if (this.previewPanel && this.previewPanel.style.display !== "none" && this.previewImg.src) {
+      this._previewKeep = true;
+    }
   },
 
   destroyed() {
