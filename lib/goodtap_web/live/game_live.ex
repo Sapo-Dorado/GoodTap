@@ -1163,18 +1163,19 @@ defmodule GoodtapWeb.GameLive do
     deck = socket.assigns.sideboard_deck
 
     # Build card spec from in-memory deck (never touches DB)
-    card_names =
+    # Include printing_id so card art is preserved through sideboarding
+    card_entries =
       deck.deck_cards
       |> Enum.filter(&(&1.board == "main"))
-      |> Enum.flat_map(&List.duplicate(&1.card_name, &1.quantity))
+      |> Enum.flat_map(&List.duplicate({&1.card_name, &1.printing_id}, &1.quantity))
 
-    commander_names =
+    commander_entries =
       deck.deck_cards
       |> Enum.filter(&(&1.board == "commander"))
-      |> Enum.flat_map(&List.duplicate(&1.card_name, &1.quantity))
+      |> Enum.flat_map(&List.duplicate({&1.card_name, &1.printing_id}, &1.quantity))
     deck_id = deck.id
 
-    card_spec = {card_names, commander_names, deck_id}
+    card_spec = {card_entries, commander_entries, deck_id}
 
     {:ok, updated_game} = Games.submit_sideboard_with_card_list(game, my_role, card_spec)
 
@@ -1186,7 +1187,17 @@ defmodule GoodtapWeb.GameLive do
       card_specs =
         Map.new(updated_game.game_players, fn gp ->
           spec = card_lists[gp.player_key] || %{}
-          {gp.player_key, {spec["card_names"] || [], spec["commander_names"] || [], spec["deck_id"]}}
+          # Convert [name, printing_id] lists back to {name, printing_id} tuples
+          # Also support legacy "card_names" format for backwards compatibility
+          card_entries = case spec["card_entries"] do
+            entries when is_list(entries) -> Enum.map(entries, fn [n, p] -> {n, p} end)
+            _ -> Enum.map(spec["card_names"] || [], &{&1, nil})
+          end
+          commander_entries = case spec["commander_entries"] do
+            entries when is_list(entries) -> Enum.map(entries, fn [n, p] -> {n, p} end)
+            _ -> Enum.map(spec["commander_names"] || [], &{&1, nil})
+          end
+          {gp.player_key, {card_entries, commander_entries, spec["deck_id"]}}
         end)
 
       players_with_keys = Enum.map(updated_game.game_players, &{&1.player_key, &1.user})
@@ -1244,12 +1255,29 @@ defmodule GoodtapWeb.GameLive do
 
     if card_lists do
       deck_id = card_lists["deck_id"]
-      commander_names = card_lists["commander_names"] || []
 
-      # Build frequency map from the flat card_names list
+      # Support both new format (card_entries with printing_ids) and legacy (card_names)
+      {main_entries, commander_entries_raw} =
+        case card_lists["card_entries"] do
+          entries when is_list(entries) ->
+            cmdr = Enum.map(card_lists["commander_entries"] || [], fn [n, p] -> {n, p} end)
+            {Enum.map(entries, fn [n, p] -> {n, p} end), cmdr}
+          _ ->
+            names = card_lists["card_names"] || []
+            cmdr = Enum.map(card_lists["commander_names"] || [], &{&1, nil})
+            {Enum.map(names, &{&1, nil}), cmdr}
+        end
+
+      # Build frequency map: {name, printing_id} -> count
       main_counts =
-        Enum.reduce(card_lists["card_names"], %{}, fn name, acc ->
+        Enum.reduce(main_entries, %{}, fn {name, _pid}, acc ->
           Map.update(acc, name, 1, &(&1 + 1))
+        end)
+
+      # Build printing_id lookup from the stored entries (preserves selected art)
+      stored_printing_ids =
+        Enum.reduce(main_entries ++ commander_entries_raw, %{}, fn {name, pid}, acc ->
+          Map.put_new(acc, name, pid)
         end)
 
       # Get original sideboard cards from DB to figure out what's "available" as sideboard
@@ -1259,17 +1287,15 @@ defmodule GoodtapWeb.GameLive do
         |> Enum.filter(&(&1.board == "sideboard"))
         |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, dc.quantity) end)
 
-      # Derive sideboard: original sideboard qty minus however many moved to main
-      # compared to original main. Simpler: reconstruct from original deck total counts.
       original_main =
         original_deck.deck_cards
         |> Enum.filter(&(&1.board == "main"))
         |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, {dc.quantity, dc.printing_id}) end)
 
-      # printing_id lookup by card name (prefer main, fall back to side)
+      # printing_id lookup: prefer stored (from previous sideboard), fall back to DB
       printing_ids =
         original_deck.deck_cards
-        |> Enum.reduce(%{}, fn dc, acc -> Map.put_new(acc, dc.card_name, dc.printing_id) end)
+        |> Enum.reduce(stored_printing_ids, fn dc, acc -> Map.put_new(acc, dc.card_name, dc.printing_id) end)
 
       # For each card name that appears across main+side, compute current allocation
       all_names =
@@ -1291,14 +1317,14 @@ defmodule GoodtapWeb.GameLive do
           entries
         end)
 
-      commander_entries =
-        commander_names
-        |> Enum.frequencies()
+      commander_deck_cards =
+        commander_entries_raw
+        |> Enum.frequencies_by(&elem(&1, 0))
         |> Enum.map(fn {name, qty} ->
           %{id: :erlang.phash2({name, "commander"}), card_name: name, board: "commander", quantity: qty, printing_id: Map.get(printing_ids, name)}
         end)
 
-      %{id: deck_id, deck_cards: commander_entries ++ deck_cards}
+      %{id: deck_id, deck_cards: commander_deck_cards ++ deck_cards}
     else
       # First sideboard: load from DB
       deck_id = get_in(game_state, [my_role, "deck_id"])

@@ -151,18 +151,20 @@ defmodule Goodtap.Games do
   end
 
   # Mark a player as ready with their resolved card list.
-  def submit_sideboard_with_card_list(game, player_key, {card_names, commander_names, deck_id}) do
+  # card_entries and commander_entries are lists of {name, printing_id} tuples.
+  def submit_sideboard_with_card_list(game, player_key, {card_entries, commander_entries, deck_id}) do
     fresh = get_game!(game.id)
     state = fresh.game_state || %{}
     ready = Map.get(state, "sideboard_ready", %{})
     card_lists = Map.get(state, "sideboard_card_lists", %{})
 
+    # Store as lists of [name, printing_id] for JSON serialization
     new_state =
       state
       |> Map.put("sideboard_ready", Map.put(ready, player_key, true))
       |> Map.put("sideboard_card_lists", Map.put(card_lists, player_key, %{
-        "card_names" => card_names,
-        "commander_names" => commander_names,
+        "card_entries" => Enum.map(card_entries, fn {name, pid} -> [name, pid] end),
+        "commander_entries" => Enum.map(commander_entries, fn {name, pid} -> [name, pid] end),
         "deck_id" => deck_id
       }))
 
