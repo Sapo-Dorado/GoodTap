@@ -57,15 +57,6 @@ const DragDrop = {
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
     this._previewSrc = null;
-    this._previewHideRaf = null;
-    this._lastMouseX = 0;
-    this._lastMouseY = 0;
-
-    this._onMouseMove = (e) => {
-      this._lastMouseX = e.clientX;
-      this._lastMouseY = e.clientY;
-    };
-    document.addEventListener("mousemove", this._onMouseMove);
 
     const onMousedown = (e) => {
       if (e.target.closest("[data-no-hotkey]")) return;
@@ -112,11 +103,6 @@ const DragDrop = {
           owner: card.dataset.owner
         };
       }
-      const imgEl = e.target.closest("[data-card-img]");
-      if (!imgEl) return;
-      if (imgEl.closest("[data-no-preview]")) return;
-      const src = imgEl.dataset.cardImg;
-      if (src) this.showPreview(src, imgEl.getBoundingClientRect());
     };
 
     const onMouseout = (e) => {
@@ -128,19 +114,23 @@ const DragDrop = {
           this.hoveredCard = null;
         }
       }
-      const imgEl = e.target.closest("[data-card-img]");
-      if (!imgEl) return;
-      if (imgEl.contains(e.relatedTarget)) return;
+    };
 
-      // Schedule a deferred hide. If this mouseout was triggered by a LiveView
-      // patch (morphdom), updated() will fire before the next paint and cancel it.
-      // Real mouseouts (user moved mouse) execute after one frame (imperceptible).
-      if (this._previewSrc) {
-        if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
-        this._previewHideRaf = requestAnimationFrame(() => {
-          this._previewHideRaf = null;
-          this._recheckPreview();
-        });
+    // Drive preview entirely from mousemove — immune to morphdom patches
+    // because we just check what's under the cursor right now.
+    const onMousemove = (e) => {
+      if (this.dragging) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) { this.hidePreview(); return; }
+      if (el.closest("[data-no-preview]")) { this.hidePreview(); return; }
+      const cardImg = el.closest("[data-card-img]");
+      if (cardImg && cardImg.dataset.cardImg) {
+        const src = cardImg.dataset.cardImg;
+        if (src !== this._previewSrc) {
+          this.showPreview(src, cardImg.getBoundingClientRect());
+        }
+      } else if (this._previewSrc) {
+        this.hidePreview();
       }
     };
 
@@ -193,6 +183,7 @@ const DragDrop = {
     this.el.addEventListener("mousedown", onMousedown);
     this.el.addEventListener("mouseover", onMouseover);
     this.el.addEventListener("mouseout", onMouseout);
+    this.el.addEventListener("mousemove", onMousemove);
     document.addEventListener("keydown", onKeydown);
     document.addEventListener("mousedown", onDocMousedown);
     if (handMenuBtn) handMenuBtn.addEventListener("click", onHandMenuClick);
@@ -201,6 +192,7 @@ const DragDrop = {
       this.el.removeEventListener("mousedown", onMousedown);
       this.el.removeEventListener("mouseover", onMouseover);
       this.el.removeEventListener("mouseout", onMouseout);
+      this.el.removeEventListener("mousemove", onMousemove);
       document.removeEventListener("keydown", onKeydown);
       document.removeEventListener("mousedown", onDocMousedown);
       if (handMenuBtn) handMenuBtn.removeEventListener("click", onHandMenuClick);
@@ -209,21 +201,10 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
-    // A patch just happened. If we had a preview showing, cancel any pending
-    // hide from mouseout (likely patch-triggered) and re-verify with elementFromPoint.
-    if (this._previewSrc) {
-      if (this._previewHideRaf) {
-        cancelAnimationFrame(this._previewHideRaf);
-        this._previewHideRaf = null;
-      }
-      this._recheckPreview();
-    }
   },
 
   destroyed() {
     if (this._cleanup) this._cleanup();
-    document.removeEventListener("mousemove", this._onMouseMove);
-    if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
     this.cleanupDrag();
     this.cleanupLasso();
     this.hidePreview();
@@ -231,10 +212,6 @@ const DragDrop = {
 
   showPreview(src, cardRect) {
     if (!this.previewPanel || !this.previewImg) return;
-    if (this._previewHideRaf) {
-      cancelAnimationFrame(this._previewHideRaf);
-      this._previewHideRaf = null;
-    }
     this._previewSrc = src;
     this.previewImg.src = src;
 
@@ -257,25 +234,7 @@ const DragDrop = {
   hidePreview() {
     if (!this.previewPanel) return;
     this._previewSrc = null;
-    if (this._previewHideRaf) {
-      cancelAnimationFrame(this._previewHideRaf);
-      this._previewHideRaf = null;
-    }
     this.previewPanel.style.display = "none";
-  },
-
-  _recheckPreview() {
-    const el = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
-    const cardImg = el && el.closest("[data-card-img]");
-    if (cardImg && cardImg.dataset.cardImg) {
-      const src = cardImg.dataset.cardImg;
-      if (src !== this._previewSrc) {
-        this.showPreview(src, cardImg.getBoundingClientRect());
-      }
-      // else: same image, preview already correct — do nothing
-    } else {
-      this.hidePreview();
-    }
   },
 
   // ─── Lasso Selection ──────────────────────────────────────────────────────
