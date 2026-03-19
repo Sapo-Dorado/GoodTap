@@ -43,23 +43,59 @@ defmodule Goodtap.GameEngine.State do
       Map.new(player_states, fn {key, state} -> {key, Map.put(state, "life", life)} end)
 
     if Keyword.get(opts, :roll_die, true) do
-      t = System.system_time(:second)
-
-      {die_roll, log} =
-        Enum.reduce(player_keys, {%{}, []}, fn key, {roll_acc, log_acc} ->
-          dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
-          total = Enum.sum(dice)
-          username = get_in(player_states, [key, "username"]) || key
-          entry = %{"t" => t, "p" => key, "u" => username, "m" => "rolled a #{total}"}
-          roll = Map.put(roll_acc, key, total) |> Map.put("#{key}_dice", dice)
-          {roll, [entry | log_acc]}
-        end)
+      {die_roll, log} = roll_until_winner(player_keys, player_states)
 
       player_states
       |> Map.put("die_roll", die_roll)
       |> Map.put("log", log)
     else
       player_states
+    end
+  end
+
+  defp roll_until_winner(player_keys, player_states) do
+    roll_until_winner(player_keys, player_states, player_keys, [])
+  end
+
+  defp roll_until_winner(all_keys, player_states, contenders, log_acc) do
+    t = System.system_time(:second)
+
+    rolls =
+      Enum.map(contenders, fn key ->
+        dice = Enum.map(1..2, fn _ -> :rand.uniform(6) end)
+        total = Enum.sum(dice)
+        {key, dice, total}
+      end)
+
+    round_log =
+      Enum.map(rolls, fn {key, _dice, total} ->
+        username = get_in(player_states, [key, "username"]) || key
+        %{"t" => t, "p" => key, "u" => username, "m" => "rolled a #{total}"}
+      end)
+
+    max_total = rolls |> Enum.map(&elem(&1, 2)) |> Enum.max()
+    winners = Enum.filter(rolls, fn {_, _, total} -> total == max_total end)
+    log_acc = round_log ++ log_acc
+
+    case winners do
+      [{winner_key, winner_dice, winner_total}] ->
+        # Build die_roll map with only the winning roll
+        die_roll =
+          all_keys
+          |> Enum.reduce(%{}, fn key, acc ->
+            if key == winner_key do
+              acc |> Map.put(key, winner_total) |> Map.put("#{key}_dice", winner_dice)
+            else
+              acc |> Map.put(key, 0) |> Map.put("#{key}_dice", [])
+            end
+          end)
+
+        {die_roll, log_acc}
+
+      tied ->
+        # Log the tie and reroll among tied players
+        tie_log = %{"t" => t, "p" => nil, "u" => "system", "m" => "tie — rerolling"}
+        roll_until_winner(all_keys, player_states, Enum.map(tied, &elem(&1, 0)), [tie_log | log_acc])
     end
   end
 

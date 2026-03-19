@@ -46,7 +46,7 @@ config :goodtap, Goodtap.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,
-  version: "0.25.4",
+  version: "0.27.2",
   path: System.get_env("ESBUILD_PATH"),
   goodtap: [
     args:
@@ -57,7 +57,7 @@ config :esbuild,
 
 # Configure tailwind (the version is required)
 config :tailwind,
-  version: "4.1.12",
+  version: "4.2.0",
   path: System.get_env("TAILWIND_PATH"),
   goodtap: [
     args: ~w(

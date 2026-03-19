@@ -465,6 +465,10 @@ defmodule GoodtapWeb.GameLive do
 
   # ─── Card Actions ─────────────────────────────────────────────────────────
 
+  def handle_event("action", %{"type" => "add_counter", "instance_id" => id}, socket) do
+    {:noreply, assign(socket, adding_counter_to: id, counter_name_input: "", context_menu: nil)}
+  end
+
   def handle_event("action", %{"type" => "tap", "instance_id" => id}, socket) do
     apply_action(socket, fn state, player ->
       card = find_card_in_zone(state, player, "battlefield", id)
@@ -2376,14 +2380,10 @@ defmodule GoodtapWeb.GameLive do
       <%= if @die_roll_modal && is_map(@game_state["die_roll"]) do %>
         <% die = @game_state["die_roll"] %>
         <% player_keys = State.all_player_keys(@game_state) %>
-        <% rolls = Enum.map(player_keys, fn k ->
-          total = die[k] || 0
-          dice = die["#{k}_dice"] || [total]
-          username = get_in(@game_state, [k, "username"]) || k
-          {k, username, total, dice}
-        end) %>
-        <% {_winner_key, winner_name, winner_total, _} = Enum.max_by(rolls, &elem(&1, 2)) %>
-        <% is_tie = Enum.count(rolls, fn {_, _, t, _} -> t == winner_total end) > 1 %>
+        <% winner_key = Enum.max_by(player_keys, fn k -> die[k] || 0 end) %>
+        <% winner_name = get_in(@game_state, [winner_key, "username"]) || winner_key %>
+        <% winner_dice = die["#{winner_key}_dice"] || [] %>
+        <% winner_total = die[winner_key] || 0 %>
         <%!-- Pip positions for each face of a d6, as {cx, cy} pairs --%>
         <% pip_layouts = %{
           1 => [{50, 50}],
@@ -2397,29 +2397,21 @@ defmodule GoodtapWeb.GameLive do
           <div class="bg-gray-800 rounded-xl p-8 w-full max-w-lg mx-4 text-center shadow-2xl">
             <h2 class="text-2xl font-bold mt-2">Die Roll</h2>
             <div style="height: 1.5rem;"></div>
-            <div class={["flex items-start mb-8", if(length(rolls) > 2, do: "flex-wrap justify-center gap-6", else: "justify-around")]}>
-              <%= for {_key, username, total, dice} <- rolls do %>
-                <div class="flex flex-col items-center gap-3 flex-1 min-w-[120px]">
-                  <span class="text-base text-gray-300 font-medium">{username}</span>
-                  <div class="flex flex-wrap justify-center gap-1">
-                    <%= for d <- dice do %>
-                      <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
-                        <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
-                          <circle cx={cx} cy={cy} r="9" fill="white"/>
-                        <% end %>
-                      </svg>
+            <div class="flex flex-col items-center gap-3 mb-8">
+              <span class="text-base text-gray-300 font-medium">{winner_name}</span>
+              <div class="flex flex-wrap justify-center gap-1">
+                <%= for d <- winner_dice do %>
+                  <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
+                    <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
+                      <circle cx={cx} cy={cy} r="9" fill="white"/>
                     <% end %>
-                  </div>
-                  <span class="text-lg font-bold text-white">{total}</span>
-                </div>
-              <% end %>
+                  </svg>
+                <% end %>
+              </div>
+              <span class="text-lg font-bold text-white">{winner_total}</span>
             </div>
             <p class="text-lg font-semibold mb-6">
-              <%= if is_tie do %>
-                It's a tie — reroll to decide!
-              <% else %>
-                <span class="text-green-400">{winner_name}</span> goes first!
-              <% end %>
+              <span class="text-green-400">{winner_name}</span> goes first!
             </p>
             <button phx-click="dismiss_die_roll" class="btn btn-primary w-full">
               Start Playing

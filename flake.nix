@@ -79,9 +79,31 @@
               beamPkgs.erlang
               pkgs.postgresql_17
               pkgs.nodejs_22
-              pkgs.tailwindcss
+              pkgs.tailwindcss_4
               pkgs.esbuild
             ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.inotify-tools ];
+
+            TAILWIND_PATH = "${pkgs.tailwindcss_4}/bin/tailwindcss";
+            ESBUILD_PATH = "${pkgs.esbuild}/bin/esbuild";
+
+            shellHook = ''
+              export PGDATA="$PWD/.postgres"
+              export PGHOST="$PWD/.postgres"
+
+              if [ ! -d "$PGDATA" ]; then
+                initdb --auth=trust --no-locale --encoding=UTF8
+                echo "unix_socket_directories = '$PGDATA'" >> "$PGDATA/postgresql.conf"
+              fi
+
+              if [ ! -d "deps/heroicons/optimized" ] && [ -d "deps/heroicons" ]; then
+                echo "Fetching heroicons SVGs..."
+                HEROICONS_VERSION="2.2.0"
+                TMP=$(mktemp -d)
+                curl -sL "https://github.com/tailwindlabs/heroicons/archive/refs/tags/v''${HEROICONS_VERSION}.tar.gz" | tar xz -C "$TMP"
+                cp -r "$TMP/heroicons-''${HEROICONS_VERSION}/optimized" deps/heroicons/optimized
+                rm -rf "$TMP"
+              fi
+            '';
           };
         });
 

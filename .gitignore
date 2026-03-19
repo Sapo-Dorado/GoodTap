@@ -37,3 +37,6 @@ npm-debug.log
 /assets/node_modules/
 
 /result
+
+# Local dev PostgreSQL data
+/.postgres
