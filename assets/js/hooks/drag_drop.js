@@ -56,6 +56,16 @@ const DragDrop = {
     this.myRole = this.el.dataset.myRole;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
+    this._previewSrc = null;
+    this._previewHideRaf = null;
+    this._lastMouseX = 0;
+    this._lastMouseY = 0;
+
+    this._onMouseMove = (e) => {
+      this._lastMouseX = e.clientX;
+      this._lastMouseY = e.clientY;
+    };
+    document.addEventListener("mousemove", this._onMouseMove);
 
     const onMousedown = (e) => {
       if (e.target.closest("[data-no-hotkey]")) return;
@@ -122,21 +132,16 @@ const DragDrop = {
       if (!imgEl) return;
       if (imgEl.contains(e.relatedTarget)) return;
 
-      // When LiveView patches the DOM, morphdom removes the old element and inserts
-      // a new one. This fires mouseout with relatedTarget === null (element removed,
-      // not mouse moving). In that case, keep the preview — the card is still there,
-      // just replaced. A real mouseout (user moved mouse) will have a relatedTarget.
-      if (!e.relatedTarget) return;
-
-      // Real mouseout — check if we're moving to another card-img element
-      const nextCardImg = e.relatedTarget.closest("[data-card-img]");
-      if (nextCardImg) {
-        // Moving to another card — onMouseover will handle updating the preview
-        return;
+      // Schedule a deferred hide. If this mouseout was triggered by a LiveView
+      // patch (morphdom), updated() will fire before the next paint and cancel it.
+      // Real mouseouts (user moved mouse) execute after one frame (imperceptible).
+      if (this._previewSrc) {
+        if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
+        this._previewHideRaf = requestAnimationFrame(() => {
+          this._previewHideRaf = null;
+          this._recheckPreview();
+        });
       }
-
-      // Moving to non-card area — hide preview
-      this.hidePreview();
     };
 
     // Keys that move a card out of its zone — sourced from data-move-keys
@@ -204,12 +209,21 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
-    // Preview stays as-is through DOM patches. The mouseout handler ignores
-    // patch-triggered mouseouts (relatedTarget === null), so nothing to do here.
+    // A patch just happened. If we had a preview showing, cancel any pending
+    // hide from mouseout (likely patch-triggered) and re-verify with elementFromPoint.
+    if (this._previewSrc) {
+      if (this._previewHideRaf) {
+        cancelAnimationFrame(this._previewHideRaf);
+        this._previewHideRaf = null;
+      }
+      this._recheckPreview();
+    }
   },
 
   destroyed() {
     if (this._cleanup) this._cleanup();
+    document.removeEventListener("mousemove", this._onMouseMove);
+    if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
     this.cleanupDrag();
     this.cleanupLasso();
     this.hidePreview();
@@ -217,6 +231,11 @@ const DragDrop = {
 
   showPreview(src, cardRect) {
     if (!this.previewPanel || !this.previewImg) return;
+    if (this._previewHideRaf) {
+      cancelAnimationFrame(this._previewHideRaf);
+      this._previewHideRaf = null;
+    }
+    this._previewSrc = src;
     this.previewImg.src = src;
 
     const previewWidth = 300; // approx width of a 420px tall MTG card
@@ -237,7 +256,26 @@ const DragDrop = {
 
   hidePreview() {
     if (!this.previewPanel) return;
+    this._previewSrc = null;
+    if (this._previewHideRaf) {
+      cancelAnimationFrame(this._previewHideRaf);
+      this._previewHideRaf = null;
+    }
     this.previewPanel.style.display = "none";
+  },
+
+  _recheckPreview() {
+    const el = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
+    const cardImg = el && el.closest("[data-card-img]");
+    if (cardImg && cardImg.dataset.cardImg) {
+      const src = cardImg.dataset.cardImg;
+      if (src !== this._previewSrc) {
+        this.showPreview(src, cardImg.getBoundingClientRect());
+      }
+      // else: same image, preview already correct — do nothing
+    } else {
+      this.hidePreview();
+    }
   },
 
   // ─── Lasso Selection ──────────────────────────────────────────────────────
