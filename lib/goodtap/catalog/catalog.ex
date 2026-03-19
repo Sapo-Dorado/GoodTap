@@ -162,6 +162,14 @@ defmodule Goodtap.Catalog do
           |> Repo.all()
           |> case do
             [card] -> [{front, card}]
+            multiple when multiple != [] ->
+              case Enum.filter(multiple, fn c ->
+                f = c.name |> String.split(" // ") |> List.first() |> String.downcase()
+                f == front
+              end) do
+                [card] -> [{front, card}]
+                _ -> []
+              end
             _ -> []
           end
         end)
@@ -207,6 +215,16 @@ defmodule Goodtap.Catalog do
           search = "#{name}%"
           case Card |> where([c], ilike(c.name, ^search) and not c.is_token) |> Repo.all() do
             [card] -> card
+            multiple when multiple != [] ->
+              # Multiple prefix matches — check if exactly one has this as its front face name
+              lower_name = String.downcase(name)
+              case Enum.filter(multiple, fn c ->
+                front = c.name |> String.split(" // ") |> List.first() |> String.downcase()
+                front == lower_name
+              end) do
+                [card] -> card
+                _ -> nil
+              end
             _ -> nil
           end
       end
