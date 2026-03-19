@@ -4,7 +4,7 @@ defmodule Goodtap.MixProject do
   def project do
     [
       app: :goodtap,
-      version: "0.1.6", # keep in sync with flake.nix
+      version: "0.1.7", # keep in sync with flake.nix
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
