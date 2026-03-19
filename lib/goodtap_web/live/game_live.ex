@@ -2219,6 +2219,7 @@ defmodule GoodtapWeb.GameLive do
       <%!-- Card Preview Panel (shown on hover via JS, hidden during drag) --%>
       <div
         id="card-preview-panel"
+        phx-update="ignore"
         class="fixed top-1/2 -translate-y-1/2 z-[9999] pointer-events-none"
         style="display: none; right: 12px;"
       >
