@@ -119,7 +119,7 @@ const DragDrop = {
     // Drive preview entirely from mousemove — immune to morphdom patches
     // because we just check what's under the cursor right now.
     const onMousemove = (e) => {
-      if (this.dragging) return;
+      if (this.dragging || this.draggedEl) return;
       const el = document.elementFromPoint(e.clientX, e.clientY);
       if (!el) { this.hidePreview(); return; }
       if (el.closest("[data-no-preview]")) { this.hidePreview(); return; }
