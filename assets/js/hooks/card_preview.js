@@ -2,8 +2,14 @@ const CardPreview = {
   mounted() {
     this.panel = document.getElementById("card-preview-panel");
     this.img = document.getElementById("card-preview-img");
-    this.currentEl = null;
-    this.currentSrc = null;
+    this._previewSrc = null;
+    this._lastMouseX = 0;
+    this._lastMouseY = 0;
+
+    this.onMove = (e) => {
+      this._lastMouseX = e.clientX;
+      this._lastMouseY = e.clientY;
+    };
 
     this.onOver = (e) => {
       const el = e.target.closest("[data-card-img]");
@@ -11,8 +17,7 @@ const CardPreview = {
       const src = el.dataset.cardImg;
       if (!src || !this.panel || !this.img) return;
 
-      this.currentEl = el;
-      this.currentSrc = src;
+      this._previewSrc = src;
       this.img.src = src;
       const rect = el.getBoundingClientRect();
       const previewWidth = 300;
@@ -29,30 +34,50 @@ const CardPreview = {
 
     this.onOut = (e) => {
       if (!e.target.closest("[data-card-img]")) return;
-      this.currentEl = null;
-      this.currentSrc = null;
-      if (this.panel) this.panel.style.display = "none";
+      // Check what's actually under the cursor — DOM patches can trigger
+      // mouseout even though the mouse hasn't moved
+      const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
+      const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
+      if (cardImgUnder && cardImgUnder.dataset.cardImg) {
+        // Still over a card — keep preview, update if src changed
+        if (cardImgUnder.dataset.cardImg !== this._previewSrc) {
+          this._previewSrc = cardImgUnder.dataset.cardImg;
+          this.img.src = this._previewSrc;
+        }
+      } else {
+        this._previewSrc = null;
+        if (this.panel) this.panel.style.display = "none";
+      }
     };
 
     this.el.addEventListener("mouseover", this.onOver);
     this.el.addEventListener("mouseout", this.onOut);
+    document.addEventListener("mousemove", this.onMove);
   },
 
   updated() {
-    // After a LiveView patch, hide preview only if the specific hovered element
-    // is gone from the DOM (e.g. search results changed). Don't hide if the element
-    // still exists — opponent actions should not interrupt your hover preview.
-    if (!this.currentEl || !this.panel) return;
-    if (!document.contains(this.currentEl)) {
-      this.currentEl = null;
-      this.currentSrc = null;
-      this.panel.style.display = "none";
+    // After a LiveView patch, re-check if cursor is still over a card
+    if (this._previewSrc && this.panel) {
+      const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
+      const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
+      if (cardImgUnder && cardImgUnder.dataset.cardImg) {
+        const newSrc = cardImgUnder.dataset.cardImg;
+        if (newSrc !== this._previewSrc) {
+          this._previewSrc = newSrc;
+          this.img.src = newSrc;
+        }
+      } else {
+        this._previewSrc = null;
+        this.panel.style.display = "none";
+      }
     }
   },
 
   destroyed() {
     this.el.removeEventListener("mouseover", this.onOver);
     this.el.removeEventListener("mouseout", this.onOut);
+    document.removeEventListener("mousemove", this.onMove);
+    this._previewSrc = null;
     if (this.panel) this.panel.style.display = "none";
   }
 };

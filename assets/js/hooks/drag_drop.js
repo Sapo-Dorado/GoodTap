@@ -56,6 +56,11 @@ const DragDrop = {
     this.myRole = this.el.dataset.myRole;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
+    // Track last known mouse position for re-checking preview after DOM patches
+    this._lastMouseX = 0;
+    this._lastMouseY = 0;
+    // The card-img src currently being previewed (null if hidden)
+    this._previewSrc = null;
 
     const onMousedown = (e) => {
       if (e.target.closest("[data-no-hotkey]")) return;
@@ -85,6 +90,11 @@ const DragDrop = {
 
       this.hidePreview();
       this.startDrag(card, e);
+    };
+
+    const onMousemove = (e) => {
+      this._lastMouseX = e.clientX;
+      this._lastMouseY = e.clientY;
     };
 
     const onMouseover = (e) => {
@@ -121,16 +131,18 @@ const DragDrop = {
       const imgEl = e.target.closest("[data-card-img]");
       if (!imgEl) return;
       if (!imgEl.contains(e.relatedTarget)) {
-        // When LiveView patches the DOM, it replaces elements which triggers
-        // mouseout. Defer the hide so updated() can check if the card still
-        // exists under the cursor before we remove the preview.
-        this._previewHideTimeout = requestAnimationFrame(() => {
-          this._previewHideTimeout = null;
-          if (!this._previewKeep) {
-            this.hidePreview();
-          }
-          this._previewKeep = false;
-        });
+        // Check if the mouse is actually still over a card-img element.
+        // LiveView DOM patches replace elements, triggering mouseout on the old
+        // element even though the mouse hasn't moved. Use elementFromPoint to
+        // check what's actually under the cursor.
+        const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
+        const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
+        if (cardImgUnder && cardImgUnder.dataset.cardImg) {
+          // Mouse is still over a card — update the preview source in case it changed
+          this.showPreview(cardImgUnder.dataset.cardImg, cardImgUnder.getBoundingClientRect());
+        } else {
+          this.hidePreview();
+        }
       }
     };
 
@@ -183,6 +195,7 @@ const DragDrop = {
     this.el.addEventListener("mousedown", onMousedown);
     this.el.addEventListener("mouseover", onMouseover);
     this.el.addEventListener("mouseout", onMouseout);
+    document.addEventListener("mousemove", onMousemove);
     document.addEventListener("keydown", onKeydown);
     document.addEventListener("mousedown", onDocMousedown);
     if (handMenuBtn) handMenuBtn.addEventListener("click", onHandMenuClick);
@@ -191,6 +204,7 @@ const DragDrop = {
       this.el.removeEventListener("mousedown", onMousedown);
       this.el.removeEventListener("mouseover", onMouseover);
       this.el.removeEventListener("mouseout", onMouseout);
+      document.removeEventListener("mousemove", onMousemove);
       document.removeEventListener("keydown", onKeydown);
       document.removeEventListener("mousedown", onDocMousedown);
       if (handMenuBtn) handMenuBtn.removeEventListener("click", onHandMenuClick);
@@ -199,11 +213,22 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
-    // After a LiveView patch, if the preview was visible and the card still
-    // exists in the DOM, keep the preview showing. This prevents flickering
-    // when the opponent takes an action.
-    if (this.previewPanel && this.previewPanel.style.display !== "none" && this.previewImg.src) {
-      this._previewKeep = true;
+    // After a LiveView patch, check if the mouse is still over a card.
+    // If so, re-show or update the preview. This handles cases where the DOM
+    // was replaced (opponent actions) but the mouse hasn't moved.
+    if (this._previewSrc) {
+      const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
+      const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
+      if (cardImgUnder && cardImgUnder.dataset.cardImg) {
+        // Card still under cursor — update src if it changed (e.g. card flipped)
+        const newSrc = cardImgUnder.dataset.cardImg;
+        if (newSrc !== this._previewSrc) {
+          this.showPreview(newSrc, cardImgUnder.getBoundingClientRect());
+        }
+      } else {
+        // No card under cursor anymore — hide
+        this.hidePreview();
+      }
     }
   },
 
@@ -216,6 +241,7 @@ const DragDrop = {
 
   showPreview(src, cardRect) {
     if (!this.previewPanel || !this.previewImg) return;
+    this._previewSrc = src;
     this.previewImg.src = src;
 
     const previewWidth = 300; // approx width of a 420px tall MTG card
@@ -235,6 +261,7 @@ const DragDrop = {
   },
 
   hidePreview() {
+    this._previewSrc = null;
     if (!this.previewPanel) return;
     this.previewPanel.style.display = "none";
   },
