@@ -2393,8 +2393,6 @@ defmodule GoodtapWeb.GameLive do
         <% player_keys = State.all_player_keys(@game_state) %>
         <% winner_key = Enum.max_by(player_keys, fn k -> die[k] || 0 end) %>
         <% winner_name = get_in(@game_state, [winner_key, "username"]) || winner_key %>
-        <% winner_dice = die["#{winner_key}_dice"] || [] %>
-        <% winner_total = die[winner_key] || 0 %>
         <%!-- Pip positions for each face of a d6, as {cx, cy} pairs --%>
         <% pip_layouts = %{
           1 => [{50, 50}],
@@ -2405,21 +2403,28 @@ defmodule GoodtapWeb.GameLive do
           6 => [{25, 22}, {75, 22}, {25, 50}, {75, 50}, {25, 78}, {75, 78}]
         } %>
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div class="bg-gray-800 rounded-xl p-8 w-full max-w-lg mx-4 text-center shadow-2xl">
+          <div class="bg-gray-800 rounded-xl p-8 w-full max-w-md mx-4 text-center shadow-2xl">
             <h2 class="text-2xl font-bold mt-2">Die Roll</h2>
             <div style="height: 1.5rem;"></div>
-            <div class="flex flex-col items-center gap-3 mb-8">
-              <span class="text-base text-gray-300 font-medium">{winner_name}</span>
-              <div class="flex flex-wrap justify-center gap-1">
-                <%= for d <- winner_dice do %>
-                  <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
-                    <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
-                      <circle cx={cx} cy={cy} r="9" fill="white"/>
+            <div class="flex justify-around items-start mb-8">
+              <%= for pk <- player_keys do %>
+                <% pk_name = get_in(@game_state, [pk, "username"]) || pk %>
+                <% pk_dice = die["#{pk}_dice"] || [] %>
+                <% pk_total = die[pk] || 0 %>
+                <div class="flex flex-col items-center gap-3 flex-1">
+                  <span class="text-base text-gray-300 font-medium">{pk_name}</span>
+                  <div class="flex flex-wrap justify-center gap-1">
+                    <%= for d <- pk_dice do %>
+                      <svg viewBox="0 0 100 100" width="72" height="72" class="rounded-xl" style="background:#1e293b; border: 3px solid #475569;">
+                        <%= for {cx, cy} <- Map.get(pip_layouts, d, []) do %>
+                          <circle cx={cx} cy={cy} r="9" fill="white"/>
+                        <% end %>
+                      </svg>
                     <% end %>
-                  </svg>
-                <% end %>
-              </div>
-              <span class="text-lg font-bold text-white">{winner_total}</span>
+                  </div>
+                  <span class="text-lg font-bold text-white">{pk_total}</span>
+                </div>
+              <% end %>
             </div>
             <p class="text-lg font-semibold mb-6">
               <span class="text-green-400">{winner_name}</span> goes first!

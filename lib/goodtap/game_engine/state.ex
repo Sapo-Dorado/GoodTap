@@ -78,16 +78,11 @@ defmodule Goodtap.GameEngine.State do
     log_acc = round_log ++ log_acc
 
     case winners do
-      [{winner_key, winner_dice, winner_total}] ->
-        # Build die_roll map with only the winning roll
+      [{_winner_key, _winner_dice, _winner_total}] ->
+        # Build die_roll map with all players' rolls
         die_roll =
-          all_keys
-          |> Enum.reduce(%{}, fn key, acc ->
-            if key == winner_key do
-              acc |> Map.put(key, winner_total) |> Map.put("#{key}_dice", winner_dice)
-            else
-              acc |> Map.put(key, 0) |> Map.put("#{key}_dice", [])
-            end
+          Enum.reduce(rolls, %{}, fn {key, dice, total}, acc ->
+            acc |> Map.put(key, total) |> Map.put("#{key}_dice", dice)
           end)
 
         {die_roll, log_acc}
