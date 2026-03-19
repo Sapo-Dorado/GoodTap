@@ -486,24 +486,21 @@ const DragDrop = {
 
         if (isBattlefield && zone === "battlefield") {
           // ── Battlefield reposition ──
-          // Only do optimistic positioning if staying on the same side (target == owner).
-          // If moving to opponent's side, the element id will change (card-* → opp-card-*)
-          // so we let the server re-render handle it.
-          const bf = document.getElementById("battlefield");
-          const bfRect2 = bf ? bf.getBoundingClientRect() : null;
-          const inMyHalf2 = bfRect2 && e.clientY >= bfRect2.top + bfRect2.height / 2;
-          const stayingOnOwnSide = inMyHalf2 && card.id.startsWith("card-");
-
-          if (stayingOnOwnSide) {
-            card.style.left = (Math.round(relX * 10000) / 100) + "%";
-            card.style.top = (Math.round(relY * 10000) / 100) + "%";
-          }
+          // Own cards always use card-{id} with left/top regardless of which
+          // player's battlefield they're placed on, so optimistic positioning
+          // works for both own-side and opponent-side drops.
+          card.style.left = (Math.round(relX * 10000) / 100) + "%";
+          card.style.top = (Math.round(relY * 10000) / 100) + "%";
           card.style.zIndex = nextLocalZ();
           card.style.opacity = ""; card.style.pointerEvents = "";
           this.draggedEl = null;
 
+          const bf = document.getElementById("battlefield");
+          const bfRect2 = bf ? bf.getBoundingClientRect() : null;
+          const inMyHalf2 = bfRect2 && e.clientY >= bfRect2.top + bfRect2.height / 2;
+
           // Reposition other selected cards by the same delta (own side only)
-          if (this.extraGhosts.length > 0 && stayingOnOwnSide) {
+          if (this.extraGhosts.length > 0 && inMyHalf2) {
             const origPrimaryXPct = (rect.left - zoneRect.left) / zoneRect.width;
             const origPrimaryYPct = (rect.top - zoneRect.top) / zoneRect.height;
             const dx = relX - origPrimaryXPct;
