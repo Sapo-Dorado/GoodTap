@@ -56,11 +56,6 @@ const DragDrop = {
     this.myRole = this.el.dataset.myRole;
     this.previewPanel = document.getElementById("card-preview-panel");
     this.previewImg = document.getElementById("card-preview-img");
-    // Track last known mouse position for re-checking preview after DOM patches
-    this._lastMouseX = 0;
-    this._lastMouseY = 0;
-    // The card-img src currently being previewed (null if hidden)
-    this._previewSrc = null;
 
     const onMousedown = (e) => {
       if (e.target.closest("[data-no-hotkey]")) return;
@@ -90,11 +85,6 @@ const DragDrop = {
 
       this.hidePreview();
       this.startDrag(card, e);
-    };
-
-    const onMousemove = (e) => {
-      this._lastMouseX = e.clientX;
-      this._lastMouseY = e.clientY;
     };
 
     const onMouseover = (e) => {
@@ -130,16 +120,23 @@ const DragDrop = {
       }
       const imgEl = e.target.closest("[data-card-img]");
       if (!imgEl) return;
-      if (!imgEl.contains(e.relatedTarget)) {
-        // Defer the check — LiveView DOM patches replace elements which triggers
-        // mouseout before the new elements are laid out. Wait for the next frame
-        // so elementFromPoint can find the replacement element.
-        if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
-        this._previewHideRaf = requestAnimationFrame(() => {
-          this._previewHideRaf = null;
-          this._recheckPreview();
-        });
+      if (imgEl.contains(e.relatedTarget)) return;
+
+      // When LiveView patches the DOM, morphdom removes the old element and inserts
+      // a new one. This fires mouseout with relatedTarget === null (element removed,
+      // not mouse moving). In that case, keep the preview — the card is still there,
+      // just replaced. A real mouseout (user moved mouse) will have a relatedTarget.
+      if (!e.relatedTarget) return;
+
+      // Real mouseout — check if we're moving to another card-img element
+      const nextCardImg = e.relatedTarget.closest("[data-card-img]");
+      if (nextCardImg) {
+        // Moving to another card — onMouseover will handle updating the preview
+        return;
       }
+
+      // Moving to non-card area — hide preview
+      this.hidePreview();
     };
 
     // Keys that move a card out of its zone — sourced from data-move-keys
@@ -191,7 +188,6 @@ const DragDrop = {
     this.el.addEventListener("mousedown", onMousedown);
     this.el.addEventListener("mouseover", onMouseover);
     this.el.addEventListener("mouseout", onMouseout);
-    document.addEventListener("mousemove", onMousemove);
     document.addEventListener("keydown", onKeydown);
     document.addEventListener("mousedown", onDocMousedown);
     if (handMenuBtn) handMenuBtn.addEventListener("click", onHandMenuClick);
@@ -200,7 +196,6 @@ const DragDrop = {
       this.el.removeEventListener("mousedown", onMousedown);
       this.el.removeEventListener("mouseover", onMouseover);
       this.el.removeEventListener("mouseout", onMouseout);
-      document.removeEventListener("mousemove", onMousemove);
       document.removeEventListener("keydown", onKeydown);
       document.removeEventListener("mousedown", onDocMousedown);
       if (handMenuBtn) handMenuBtn.removeEventListener("click", onHandMenuClick);
@@ -209,14 +204,8 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
-    // After a LiveView patch, re-check preview after the browser lays out new elements.
-    if (this._previewSrc) {
-      if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
-      this._previewHideRaf = requestAnimationFrame(() => {
-        this._previewHideRaf = null;
-        this._recheckPreview();
-      });
-    }
+    // Preview stays as-is through DOM patches. The mouseout handler ignores
+    // patch-triggered mouseouts (relatedTarget === null), so nothing to do here.
   },
 
   destroyed() {
@@ -228,7 +217,6 @@ const DragDrop = {
 
   showPreview(src, cardRect) {
     if (!this.previewPanel || !this.previewImg) return;
-    this._previewSrc = src;
     this.previewImg.src = src;
 
     const previewWidth = 300; // approx width of a 420px tall MTG card
@@ -248,29 +236,8 @@ const DragDrop = {
   },
 
   hidePreview() {
-    this._previewSrc = null;
-    if (this._previewHideRaf) {
-      cancelAnimationFrame(this._previewHideRaf);
-      this._previewHideRaf = null;
-    }
     if (!this.previewPanel) return;
     this.previewPanel.style.display = "none";
-  },
-
-  // Check if the cursor is still over a card-img element and update/hide preview accordingly.
-  // Called after a rAF delay so the browser has finished laying out any new DOM from LiveView patches.
-  _recheckPreview() {
-    const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
-    const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
-    if (cardImgUnder && cardImgUnder.dataset.cardImg) {
-      const newSrc = cardImgUnder.dataset.cardImg;
-      if (newSrc !== this._previewSrc) {
-        this.showPreview(newSrc, cardImgUnder.getBoundingClientRect());
-      }
-      // else: same src, preview already showing — do nothing
-    } else {
-      this.hidePreview();
-    }
   },
 
   // ─── Lasso Selection ──────────────────────────────────────────────────────
