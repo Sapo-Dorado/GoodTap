@@ -15,7 +15,7 @@ defmodule GoodtapWeb.CardSearchComponent do
   show_filter_toggle: show buttons to switch filter at runtime (default: false)
 
   The parent receives a `on_select` event with:
-      %{"card_id" => card.id, "card_name" => card.name, "printing_id" => printing_id_or_nil}
+      %{"card_id" => card.id, "oracle_id" => card.oracle_id, "printing_id" => printing_id_or_nil}
   """
   use GoodtapWeb, :live_component
 
@@ -66,7 +66,7 @@ defmodule GoodtapWeb.CardSearchComponent do
         recent_printings =
           Enum.reduce(new_recent_names, %{}, fn entry, acc ->
             if entry["printing_id"] do
-              card = Enum.find(recent_cards, &(&1.name == entry["name"]))
+              card = Enum.find(recent_cards, &(&1.oracle_id == entry["oracle_id"]))
               if card, do: Map.put(acc, to_string(card.id), entry["printing_id"]), else: acc
             else
               acc
@@ -113,12 +113,12 @@ defmodule GoodtapWeb.CardSearchComponent do
     {:noreply, assign(socket, selected_printings: selected_printings)}
   end
 
-  def handle_event("select_card", %{"card_id" => card_id, "card_name" => card_name}, socket) do
+  def handle_event("select_card", %{"card_id" => card_id, "oracle_id" => oracle_id}, socket) do
     printing_id = Map.get(socket.assigns.selected_printings, card_id)
 
     send(self(), {socket.assigns.on_select, %{
       "card_id" => card_id,
-      "card_name" => card_name,
+      "oracle_id" => oracle_id,
       "printing_id" => printing_id
     }})
 
@@ -191,7 +191,7 @@ defmodule GoodtapWeb.CardSearchComponent do
               <button
                 phx-click="select_card"
                 phx-value-card_id={card.id}
-                phx-value-card_name={card.name}
+                phx-value-oracle_id={card.oracle_id}
                 phx-target={@myself}
                 class="rounded hover:ring-2 hover:ring-purple-400 transition-all"
                 title={card.name}
@@ -229,7 +229,7 @@ defmodule GoodtapWeb.CardSearchComponent do
             <button
               phx-click="select_card"
               phx-value-card_id={card.id}
-              phx-value-card_name={card.name}
+              phx-value-oracle_id={card.oracle_id}
               phx-target={@myself}
               class="rounded hover:ring-2 hover:ring-purple-400 transition-all"
               title={card.name}

@@ -66,30 +66,36 @@ defmodule Goodtap.Catalog do
     |> Repo.all()
   end
 
-  # Fetch cards matching recent token entries (list of %{"name" => _, "oracle_text" => _} maps).
-  # Preserves the order of the input list and matches on both name and oracle_text.
+  def list_cards_by_oracle_ids(oracle_ids) when is_list(oracle_ids) do
+    Card
+    |> where([c], c.oracle_id in ^oracle_ids)
+    |> Repo.all()
+  end
+
+  # Fetch cards matching recent token entries (list of %{"oracle_id" => _} maps).
+  # Preserves the order of the input list and matches on oracle_id.
   def get_cards_by_recent_tokens(entries) when is_list(entries) do
-    names = Enum.map(entries, & &1["name"]) |> Enum.uniq()
+    oracle_ids = Enum.map(entries, & &1["oracle_id"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     cards =
       Card
-      |> where([c], c.name in ^names)
+      |> where([c], c.oracle_id in ^oracle_ids)
       |> Repo.all()
 
-    Enum.reduce(entries, [], fn entry, acc ->
-      match =
-        Enum.find(cards, fn c ->
-          c.name == entry["name"] &&
-            (get_in(c.data, ["oracle_text"]) || "") == entry["oracle_text"]
-        end)
+    card_map = Map.new(cards, &{&1.oracle_id, &1})
 
-      if match, do: acc ++ [match], else: acc
+    Enum.reduce(entries, [], fn entry, acc ->
+      case Map.get(card_map, entry["oracle_id"]) do
+        nil -> acc
+        card -> acc ++ [card]
+      end
     end)
   end
 
   # Find a specific printing by its Scryfall ID within a card's printings array
-  def get_printing(card_name, printing_id) when is_binary(card_name) and is_binary(printing_id) do
-    case get_card_by_name(card_name) do
+  def get_printing(oracle_id, printing_id) when is_binary(oracle_id) and is_binary(printing_id) do
+    card = Repo.one(from c in Card, where: c.oracle_id == ^oracle_id, limit: 1)
+    case card do
       nil -> nil
       card -> Enum.find(card.printings, &(&1["id"] == printing_id))
     end
@@ -99,8 +105,9 @@ defmodule Goodtap.Catalog do
   def get_printing(_, nil), do: nil
 
   # Return all printings for a card (already embedded on the card row)
-  def get_printings_for_card(card_name) do
-    case get_card_by_name(card_name) do
+  def get_printings_for_card(oracle_id) do
+    card = Repo.one(from c in Card, where: c.oracle_id == ^oracle_id, limit: 1)
+    case card do
       nil -> []
       card -> card.printings
     end

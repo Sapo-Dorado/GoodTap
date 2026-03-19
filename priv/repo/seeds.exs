@@ -99,6 +99,7 @@ entries_list
       %{
         id: card["id"],
         name: card["name"],
+        oracle_id: card["oracle_id"] || card["id"],
         layout: card["layout"],
         is_token: card["layout"] in ["token", "double_faced_token"],
         data: card,
@@ -112,7 +113,7 @@ entries_list
   Repo.insert_all(Card, entries,
     on_conflict:
       {:replace,
-       [:name, :layout, :is_token, :data, :printings, :default_printing_id, :updated_at]},
+       [:name, :oracle_id, :layout, :is_token, :data, :printings, :default_printing_id, :updated_at]},
     conflict_target: [:id]
   )
 

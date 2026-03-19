@@ -3,10 +3,11 @@ defmodule Goodtap.Catalog.Card do
   import Ecto.Changeset
 
   @primary_key {:id, :string, autogenerate: false}
-  @derive {Jason.Encoder, only: [:id, :name, :layout, :data]}
+  @derive {Jason.Encoder, only: [:id, :name, :oracle_id, :layout, :data]}
 
   schema "cards" do
     field :name, :string
+    field :oracle_id, :string
     field :layout, :string
     field :is_token, :boolean, default: false
     field :data, :map
@@ -17,7 +18,7 @@ defmodule Goodtap.Catalog.Card do
 
   def changeset(card, attrs) do
     card
-    |> cast(attrs, [:id, :name, :layout, :is_token, :data, :printings])
+    |> cast(attrs, [:id, :name, :oracle_id, :layout, :is_token, :data, :printings])
     |> validate_required([:id, :name, :data])
   end
 end

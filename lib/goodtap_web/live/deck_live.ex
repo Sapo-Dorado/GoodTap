@@ -123,9 +123,9 @@ defmodule GoodtapWeb.DeckLive do
     {:noreply, assign(socket, adding_to_board: nil)}
   end
 
-  def handle_info({:deck_card_selected, %{"card_name" => card_name, "printing_id" => printing_id}}, socket) do
+  def handle_info({:deck_card_selected, %{"oracle_id" => oracle_id, "printing_id" => printing_id}}, socket) do
     board = socket.assigns.adding_to_board || "main"
-    {:ok, _} = Decks.add_card_to_deck(socket.assigns.deck, card_name, printing_id, board)
+    {:ok, _} = Decks.add_card_to_deck(socket.assigns.deck, oracle_id, printing_id, board)
     {:noreply, socket |> reload_deck() |> assign(adding_to_board: nil)}
   end
 
@@ -137,8 +137,8 @@ defmodule GoodtapWeb.DeckLive do
   end
 
   defp load_card_map(deck) do
-    names = Enum.map(deck.deck_cards, & &1.card_name) |> Enum.uniq()
-    Catalog.list_cards_by_names(names) |> Map.new(&{&1.name, &1})
+    oracle_ids = Enum.map(deck.deck_cards, & &1.oracle_id) |> Enum.uniq()
+    Catalog.list_cards_by_oracle_ids(oracle_ids) |> Map.new(&{&1.oracle_id, &1})
   end
 
   defp board_label("commander"), do: "Starts in Play"
@@ -205,7 +205,7 @@ defmodule GoodtapWeb.DeckLive do
 
           <%= if @deck_view_mode == :list do %>
             <div class="space-y-1">
-              <%= for dc <- Enum.sort_by(cards, & &1.card_name) do %>
+              <%= for dc <- Enum.sort_by(cards, fn dc -> (Map.get(@card_map, dc.oracle_id) || %{}) |> Map.get(:name, "") end) do %>
                 <div class="flex items-center gap-2 text-sm group">
                   <%= if @editing_qty == to_string(dc.id) do %>
                     <form phx-submit="save_qty" class="flex items-center">
@@ -235,7 +235,7 @@ defmodule GoodtapWeb.DeckLive do
                       class="text-white cursor-context-menu hover:text-purple-300"
                       data-deck-card-id={dc.id}
                       data-deck-card-board={dc.board}
-                    >{dc.card_name}</span>
+                    >{(Map.get(@card_map, dc.oracle_id) || %{name: dc.oracle_id}).name}</span>
                     <button
                       phx-click="remove_card"
                       phx-value-id={dc.id}
@@ -262,15 +262,15 @@ defmodule GoodtapWeb.DeckLive do
             </div>
           <% else %>
             <div class="flex flex-wrap gap-3">
-              <%= for dc <- Enum.sort_by(cards, & &1.card_name) do %>
-                <% card = Map.get(@card_map, dc.card_name) %>
+              <%= for dc <- Enum.sort_by(cards, fn dc -> (Map.get(@card_map, dc.oracle_id) || %{}) |> Map.get(:name, "") end) do %>
+                <% card = Map.get(@card_map, dc.oracle_id) %>
                 <% img = card_image_url_from_card(card, dc.printing_id) %>
                 <div class="flex flex-col items-center gap-1 relative group w-24">
                   <div class="relative w-full">
                     <img
                       src={img || "/images/CardBack.png"}
                       class="w-full h-auto rounded shadow cursor-context-menu"
-                      title={dc.card_name}
+                      title={(card && card.name) || dc.oracle_id}
                       data-deck-card-id={dc.id}
                       data-deck-card-board={dc.board}
                     />
@@ -311,7 +311,7 @@ defmodule GoodtapWeb.DeckLive do
                         class="text-xs text-gray-400 hover:text-white shrink-0"
                       >{dc.quantity}x</button>
                     <% end %>
-                    <span class="text-xs text-gray-300 truncate">{dc.card_name}</span>
+                    <span class="text-xs text-gray-300 truncate">{(Map.get(@card_map, dc.oracle_id) || %{name: dc.oracle_id}).name}</span>
                   </div>
                   <form
                     :if={card && length(card.printings) > 1}

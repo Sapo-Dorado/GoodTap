@@ -1127,7 +1127,7 @@ defmodule GoodtapWeb.GameLive do
     updated_cards =
       if source_card do
         move_qty = min(count, source_card.quantity)
-        dest_card = Enum.find(cards, &(&1.card_name == source_card.card_name && &1.board == to_board))
+        dest_card = Enum.find(cards, &(&1.oracle_id == source_card.oracle_id && &1.board == to_board))
 
         cards
         |> Enum.map(fn dc ->
@@ -1167,12 +1167,12 @@ defmodule GoodtapWeb.GameLive do
     card_entries =
       deck.deck_cards
       |> Enum.filter(&(&1.board == "main"))
-      |> Enum.flat_map(&List.duplicate({&1.card_name, &1.printing_id}, &1.quantity))
+      |> Enum.flat_map(&List.duplicate({&1.oracle_id, &1.printing_id}, &1.quantity))
 
     commander_entries =
       deck.deck_cards
       |> Enum.filter(&(&1.board == "commander"))
-      |> Enum.flat_map(&List.duplicate({&1.card_name, &1.printing_id}, &1.quantity))
+      |> Enum.flat_map(&List.duplicate({&1.oracle_id, &1.printing_id}, &1.quantity))
     deck_id = deck.id
 
     card_spec = {card_entries, commander_entries, deck_id}
@@ -1187,16 +1187,9 @@ defmodule GoodtapWeb.GameLive do
       card_specs =
         Map.new(updated_game.game_players, fn gp ->
           spec = card_lists[gp.player_key] || %{}
-          # Convert [name, printing_id] lists back to {name, printing_id} tuples
-          # Also support legacy "card_names" format for backwards compatibility
-          card_entries = case spec["card_entries"] do
-            entries when is_list(entries) -> Enum.map(entries, fn [n, p] -> {n, p} end)
-            _ -> Enum.map(spec["card_names"] || [], &{&1, nil})
-          end
-          commander_entries = case spec["commander_entries"] do
-            entries when is_list(entries) -> Enum.map(entries, fn [n, p] -> {n, p} end)
-            _ -> Enum.map(spec["commander_names"] || [], &{&1, nil})
-          end
+          # Convert [oracle_id, printing_id] lists back to {oracle_id, printing_id} tuples
+          card_entries = Enum.map(spec["card_entries"] || [], fn [oid, p] -> {oid, p} end)
+          commander_entries = Enum.map(spec["commander_entries"] || [], fn [oid, p] -> {oid, p} end)
           {gp.player_key, {card_entries, commander_entries, spec["deck_id"]}}
         end)
 
@@ -1230,8 +1223,8 @@ defmodule GoodtapWeb.GameLive do
   # Uses the card list from the previous sideboard (stored in game_state) if available,
   # so successive sideboards start from where the last one ended.
   # Falls back to the original DB deck on first sideboard.
-  defp sideboard_card_img(card_map, card_name, printing_id \\ nil) do
-    case Map.get(card_map, card_name) do
+  defp sideboard_card_img(card_map, oracle_id, printing_id \\ nil) do
+    case Map.get(card_map, oracle_id) do
       nil -> nil
       card ->
         printing = if printing_id, do: Enum.find(card.printings || [], &(&1["id"] == printing_id))
@@ -1246,8 +1239,8 @@ defmodule GoodtapWeb.GameLive do
 
   defp sideboard_card_map(nil), do: %{}
   defp sideboard_card_map(deck) do
-    names = Enum.map(deck.deck_cards, & &1.card_name) |> Enum.uniq()
-    Catalog.list_cards_by_names(names) |> Map.new(&{&1.name, &1})
+    oracle_ids = Enum.map(deck.deck_cards, & &1.oracle_id) |> Enum.uniq()
+    Catalog.list_cards_by_oracle_ids(oracle_ids) |> Map.new(&{&1.oracle_id, &1})
   end
 
   defp build_sideboard_deck(game_state, my_role) do
@@ -1256,28 +1249,19 @@ defmodule GoodtapWeb.GameLive do
     if card_lists do
       deck_id = card_lists["deck_id"]
 
-      # Support both new format (card_entries with printing_ids) and legacy (card_names)
-      {main_entries, commander_entries_raw} =
-        case card_lists["card_entries"] do
-          entries when is_list(entries) ->
-            cmdr = Enum.map(card_lists["commander_entries"] || [], fn [n, p] -> {n, p} end)
-            {Enum.map(entries, fn [n, p] -> {n, p} end), cmdr}
-          _ ->
-            names = card_lists["card_names"] || []
-            cmdr = Enum.map(card_lists["commander_names"] || [], &{&1, nil})
-            {Enum.map(names, &{&1, nil}), cmdr}
-        end
+      main_entries = Enum.map(card_lists["card_entries"] || [], fn [oid, p] -> {oid, p} end)
+      commander_entries_raw = Enum.map(card_lists["commander_entries"] || [], fn [oid, p] -> {oid, p} end)
 
-      # Build frequency map: {name, printing_id} -> count
+      # Build frequency map: oracle_id -> count
       main_counts =
-        Enum.reduce(main_entries, %{}, fn {name, _pid}, acc ->
-          Map.update(acc, name, 1, &(&1 + 1))
+        Enum.reduce(main_entries, %{}, fn {oracle_id, _pid}, acc ->
+          Map.update(acc, oracle_id, 1, &(&1 + 1))
         end)
 
       # Build printing_id lookup from the stored entries (preserves selected art)
       stored_printing_ids =
-        Enum.reduce(main_entries ++ commander_entries_raw, %{}, fn {name, pid}, acc ->
-          Map.put_new(acc, name, pid)
+        Enum.reduce(main_entries ++ commander_entries_raw, %{}, fn {oracle_id, pid}, acc ->
+          Map.put_new(acc, oracle_id, pid)
         end)
 
       # Get original sideboard cards from DB to figure out what's "available" as sideboard
@@ -1285,43 +1269,43 @@ defmodule GoodtapWeb.GameLive do
       original_side =
         original_deck.deck_cards
         |> Enum.filter(&(&1.board == "sideboard"))
-        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, dc.quantity) end)
+        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.oracle_id, dc.quantity) end)
 
       original_main =
         original_deck.deck_cards
         |> Enum.filter(&(&1.board == "main"))
-        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.card_name, {dc.quantity, dc.printing_id}) end)
+        |> Enum.reduce(%{}, fn dc, acc -> Map.put(acc, dc.oracle_id, {dc.quantity, dc.printing_id}) end)
 
       # printing_id lookup: prefer stored (from previous sideboard), fall back to DB
       printing_ids =
         original_deck.deck_cards
-        |> Enum.reduce(stored_printing_ids, fn dc, acc -> Map.put_new(acc, dc.card_name, dc.printing_id) end)
+        |> Enum.reduce(stored_printing_ids, fn dc, acc -> Map.put_new(acc, dc.oracle_id, dc.printing_id) end)
 
-      # For each card name that appears across main+side, compute current allocation
-      all_names =
+      # For each oracle_id that appears across main+side, compute current allocation
+      all_oracle_ids =
         Map.keys(original_main) ++ Map.keys(original_side) |> Enum.uniq()
 
       deck_cards =
-        all_names
-        |> Enum.flat_map(fn name ->
-          {orig_main_qty, _} = Map.get(original_main, name, {0, nil})
-          orig_side = Map.get(original_side, name, 0)
+        all_oracle_ids
+        |> Enum.flat_map(fn oracle_id ->
+          {orig_main_qty, _} = Map.get(original_main, oracle_id, {0, nil})
+          orig_side = Map.get(original_side, oracle_id, 0)
           total = orig_main_qty + orig_side
-          cur_main = Map.get(main_counts, name, 0)
+          cur_main = Map.get(main_counts, oracle_id, 0)
           cur_side = total - cur_main
-          printing_id = Map.get(printing_ids, name)
+          printing_id = Map.get(printing_ids, oracle_id)
 
           entries = []
-          entries = if cur_main > 0, do: entries ++ [%{id: :erlang.phash2({name, "main"}), card_name: name, board: "main", quantity: cur_main, printing_id: printing_id}], else: entries
-          entries = if cur_side > 0, do: entries ++ [%{id: :erlang.phash2({name, "sideboard"}), card_name: name, board: "sideboard", quantity: cur_side, printing_id: printing_id}], else: entries
+          entries = if cur_main > 0, do: entries ++ [%{id: :erlang.phash2({oracle_id, "main"}), oracle_id: oracle_id, board: "main", quantity: cur_main, printing_id: printing_id}], else: entries
+          entries = if cur_side > 0, do: entries ++ [%{id: :erlang.phash2({oracle_id, "sideboard"}), oracle_id: oracle_id, board: "sideboard", quantity: cur_side, printing_id: printing_id}], else: entries
           entries
         end)
 
       commander_deck_cards =
         commander_entries_raw
         |> Enum.frequencies_by(&elem(&1, 0))
-        |> Enum.map(fn {name, qty} ->
-          %{id: :erlang.phash2({name, "commander"}), card_name: name, board: "commander", quantity: qty, printing_id: Map.get(printing_ids, name)}
+        |> Enum.map(fn {oracle_id, qty} ->
+          %{id: :erlang.phash2({oracle_id, "commander"}), oracle_id: oracle_id, board: "commander", quantity: qty, printing_id: Map.get(printing_ids, oracle_id)}
         end)
 
       %{id: deck_id, deck_cards: commander_deck_cards ++ deck_cards}
@@ -2488,8 +2472,9 @@ defmodule GoodtapWeb.GameLive do
 
       <%!-- Sideboard Modal --%>
       <%= if @sideboard_modal && @sideboard_deck do %>
-        <% main_cards = Enum.filter(@sideboard_deck.deck_cards, &(&1.board == "main")) |> Enum.sort_by(& &1.card_name) %>
-        <% side_cards = Enum.filter(@sideboard_deck.deck_cards, &(&1.board == "sideboard")) |> Enum.sort_by(& &1.card_name) %>
+        <% sb_name = fn dc -> (Map.get(@sideboard_card_map, dc.oracle_id) || %{name: dc.oracle_id}).name end %>
+        <% main_cards = Enum.filter(@sideboard_deck.deck_cards, &(&1.board == "main")) |> Enum.sort_by(sb_name) %>
+        <% side_cards = Enum.filter(@sideboard_deck.deck_cards, &(&1.board == "sideboard")) |> Enum.sort_by(sb_name) %>
         <% already_submitted = get_in(@game.game_state, ["sideboard_ready", @my_role]) == true %>
         <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
           <div id="sideboard-modal" phx-hook="CardPreview" class="bg-gray-800 rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
@@ -2508,13 +2493,13 @@ defmodule GoodtapWeb.GameLive do
                 <h3 class="text-sm font-semibold text-gray-400 mb-2">Main Deck ({Enum.sum(Enum.map(main_cards, & &1.quantity))})</h3>
                 <div class="overflow-y-auto flex-1 space-y-0.5">
                   <%= for dc <- main_cards do %>
-                    <% card_img = sideboard_card_img(@sideboard_card_map, dc.card_name, dc.printing_id) %>
+                    <% card_img = sideboard_card_img(@sideboard_card_map, dc.oracle_id, dc.printing_id) %>
                     <div class="flex items-center gap-2 text-sm py-0.5">
                       <span class="text-gray-400 w-6 text-right shrink-0 tabular-nums">{dc.quantity}x</span>
                       <span
                         class="flex-1 text-white truncate"
                         data-card-img={card_img}
-                      >{dc.card_name}</span>
+                      >{sb_name.(dc)}</span>
                       <%= if !already_submitted do %>
                         <button
                           phx-hook="SideboardButton"
@@ -2535,7 +2520,7 @@ defmodule GoodtapWeb.GameLive do
                 <h3 class="text-sm font-semibold text-gray-400 mb-2">Sideboard ({Enum.sum(Enum.map(side_cards, & &1.quantity))})</h3>
                 <div class="overflow-y-auto flex-1 space-y-0.5">
                   <%= for dc <- side_cards do %>
-                    <% card_img = sideboard_card_img(@sideboard_card_map, dc.card_name, dc.printing_id) %>
+                    <% card_img = sideboard_card_img(@sideboard_card_map, dc.oracle_id, dc.printing_id) %>
                     <div class="flex items-center gap-2 text-sm py-0.5">
                       <%= if !already_submitted do %>
                         <button
@@ -2551,7 +2536,7 @@ defmodule GoodtapWeb.GameLive do
                       <span
                         class="flex-1 text-white truncate"
                         data-card-img={card_img}
-                      >{dc.card_name}</span>
+                      >{sb_name.(dc)}</span>
                     </div>
                   <% end %>
                 </div>

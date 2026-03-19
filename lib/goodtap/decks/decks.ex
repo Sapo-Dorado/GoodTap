@@ -49,7 +49,7 @@ defmodule Goodtap.Decks do
           {card, printing_id} ->
             row = %{
               deck_id: deck.id,
-              card_name: card.name,
+              oracle_id: card.oracle_id,
               printing_id: printing_id,
               quantity: entry.quantity,
               board: entry.board
@@ -58,17 +58,17 @@ defmodule Goodtap.Decks do
         end
       end)
 
-    # Merge duplicate {card_name, board} entries (e.g. "1 Foo\n1 Foo" → quantity 2)
+    # Merge duplicate {oracle_id, board} entries (e.g. "1 Foo\n1 Foo" → quantity 2)
     to_insert =
       to_insert_raw
-      |> Enum.group_by(fn row -> {row.card_name, row.board} end)
+      |> Enum.group_by(fn row -> {row.oracle_id, row.board} end)
       |> Enum.map(fn {_, [first | rest]} ->
         Enum.reduce(rest, first, fn row, acc -> %{acc | quantity: acc.quantity + row.quantity} end)
       end)
 
     Repo.insert_all(DeckCard, to_insert,
       on_conflict: :replace_all,
-      conflict_target: [:deck_id, :card_name, :board]
+      conflict_target: [:deck_id, :oracle_id, :board]
     )
 
     not_found |> Enum.reverse()
@@ -107,12 +107,12 @@ defmodule Goodtap.Decks do
     Repo.delete(deck)
   end
 
-  def add_card_to_deck(deck, card_name, printing_id \\ nil, board \\ "main") do
+  def add_card_to_deck(deck, oracle_id, printing_id \\ nil, board \\ "main") do
     %DeckCard{}
-    |> DeckCard.changeset(%{deck_id: deck.id, card_name: card_name, printing_id: printing_id, quantity: 1, board: board})
+    |> DeckCard.changeset(%{deck_id: deck.id, oracle_id: oracle_id, printing_id: printing_id, quantity: 1, board: board})
     |> Repo.insert(
       on_conflict: [inc: [quantity: 1]],
-      conflict_target: [:deck_id, :card_name, :board]
+      conflict_target: [:deck_id, :oracle_id, :board]
     )
   end
 
@@ -136,7 +136,7 @@ defmodule Goodtap.Decks do
     existing =
       Repo.get_by(DeckCard,
         deck_id: deck_card.deck_id,
-        card_name: deck_card.card_name,
+        oracle_id: deck_card.oracle_id,
         board: board
       )
 
@@ -157,7 +157,7 @@ defmodule Goodtap.Decks do
   # Move a single copy of a card to another board (for sideboarding one at a time)
   def move_one_to_board(deck_card, board) do
     Repo.transact(fn ->
-      existing = Repo.get_by(DeckCard, deck_id: deck_card.deck_id, card_name: deck_card.card_name, board: board)
+      existing = Repo.get_by(DeckCard, deck_id: deck_card.deck_id, oracle_id: deck_card.oracle_id, board: board)
 
       if deck_card.quantity <= 1 do
         # Move the whole entry
@@ -174,7 +174,7 @@ defmodule Goodtap.Decks do
           Repo.update_all(from(dc in DeckCard, where: dc.id == ^existing.id), inc: [quantity: 1])
         else
           %DeckCard{}
-          |> DeckCard.changeset(%{deck_id: deck_card.deck_id, card_name: deck_card.card_name, printing_id: deck_card.printing_id, quantity: 1, board: board})
+          |> DeckCard.changeset(%{deck_id: deck_card.deck_id, oracle_id: deck_card.oracle_id, printing_id: deck_card.printing_id, quantity: 1, board: board})
           |> Repo.insert!()
         end
       end
@@ -185,13 +185,13 @@ defmodule Goodtap.Decks do
 
   def get_deck_card!(id), do: Repo.get!(DeckCard, id)
 
-  # Returns a flat list of card names repeated by quantity (for shuffling into deck)
-  def expand_deck_card_names(deck_id) do
+  # Returns a flat list of {oracle_id, printing_id} tuples repeated by quantity (for shuffling into deck)
+  def expand_deck_cards(deck_id) do
     DeckCard
     |> where([dc], dc.deck_id == ^deck_id and dc.board == "main")
-    |> select([dc], {dc.card_name, dc.quantity, dc.printing_id})
+    |> select([dc], {dc.oracle_id, dc.quantity, dc.printing_id})
     |> Repo.all()
-    |> Enum.flat_map(fn {name, qty, printing_id} -> List.duplicate({name, printing_id}, qty) end)
+    |> Enum.flat_map(fn {oracle_id, qty, printing_id} -> List.duplicate({oracle_id, printing_id}, qty) end)
   end
 
   # Apply a list of sideboard swaps: [{deck_card_id, qty, to_board}]
@@ -199,13 +199,12 @@ defmodule Goodtap.Decks do
     Repo.transact(fn ->
       Enum.each(swaps, fn {deck_card_id, qty, to_board} ->
         dc = Repo.get!(DeckCard, deck_card_id)
-        from_board = dc.board
 
         cond do
           qty <= 0 -> :ok
           qty >= dc.quantity ->
             # Move all to target board
-            existing = Repo.get_by(DeckCard, deck_id: dc.deck_id, card_name: dc.card_name, board: to_board)
+            existing = Repo.get_by(DeckCard, deck_id: dc.deck_id, oracle_id: dc.oracle_id, board: to_board)
 
             if existing do
               Repo.update_all(
@@ -220,7 +219,7 @@ defmodule Goodtap.Decks do
           true ->
             # Move partial qty: reduce source, add to target
             dc |> DeckCard.changeset(%{quantity: dc.quantity - qty}) |> Repo.update!()
-            existing = Repo.get_by(DeckCard, deck_id: dc.deck_id, card_name: dc.card_name, board: to_board)
+            existing = Repo.get_by(DeckCard, deck_id: dc.deck_id, oracle_id: dc.oracle_id, board: to_board)
 
             if existing do
               Repo.update_all(
@@ -231,7 +230,7 @@ defmodule Goodtap.Decks do
               %DeckCard{}
               |> DeckCard.changeset(%{
                 deck_id: dc.deck_id,
-                card_name: dc.card_name,
+                oracle_id: dc.oracle_id,
                 printing_id: dc.printing_id,
                 quantity: qty,
                 board: to_board
@@ -239,8 +238,6 @@ defmodule Goodtap.Decks do
               |> Repo.insert!()
             end
         end
-
-        _ = from_board  # suppress unused warning
       end)
 
       {:ok, :done}
@@ -255,7 +252,7 @@ defmodule Goodtap.Decks do
   end
 
   # Move a card to the starts-in-play board
-  def set_commander(deck_id, deck_card_id) do
+  def set_commander(_deck_id, deck_card_id) do
     deck_card = Repo.get!(DeckCard, deck_card_id)
     move_deck_card_board(deck_card, "commander")
   end
