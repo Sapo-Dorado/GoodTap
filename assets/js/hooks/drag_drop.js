@@ -131,18 +131,14 @@ const DragDrop = {
       const imgEl = e.target.closest("[data-card-img]");
       if (!imgEl) return;
       if (!imgEl.contains(e.relatedTarget)) {
-        // Check if the mouse is actually still over a card-img element.
-        // LiveView DOM patches replace elements, triggering mouseout on the old
-        // element even though the mouse hasn't moved. Use elementFromPoint to
-        // check what's actually under the cursor.
-        const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
-        const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
-        if (cardImgUnder && cardImgUnder.dataset.cardImg) {
-          // Mouse is still over a card — update the preview source in case it changed
-          this.showPreview(cardImgUnder.dataset.cardImg, cardImgUnder.getBoundingClientRect());
-        } else {
-          this.hidePreview();
-        }
+        // Defer the check — LiveView DOM patches replace elements which triggers
+        // mouseout before the new elements are laid out. Wait for the next frame
+        // so elementFromPoint can find the replacement element.
+        if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
+        this._previewHideRaf = requestAnimationFrame(() => {
+          this._previewHideRaf = null;
+          this._recheckPreview();
+        });
       }
     };
 
@@ -213,22 +209,13 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
-    // After a LiveView patch, check if the mouse is still over a card.
-    // If so, re-show or update the preview. This handles cases where the DOM
-    // was replaced (opponent actions) but the mouse hasn't moved.
+    // After a LiveView patch, re-check preview after the browser lays out new elements.
     if (this._previewSrc) {
-      const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
-      const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
-      if (cardImgUnder && cardImgUnder.dataset.cardImg) {
-        // Card still under cursor — update src if it changed (e.g. card flipped)
-        const newSrc = cardImgUnder.dataset.cardImg;
-        if (newSrc !== this._previewSrc) {
-          this.showPreview(newSrc, cardImgUnder.getBoundingClientRect());
-        }
-      } else {
-        // No card under cursor anymore — hide
-        this.hidePreview();
-      }
+      if (this._previewHideRaf) cancelAnimationFrame(this._previewHideRaf);
+      this._previewHideRaf = requestAnimationFrame(() => {
+        this._previewHideRaf = null;
+        this._recheckPreview();
+      });
     }
   },
 
@@ -262,8 +249,28 @@ const DragDrop = {
 
   hidePreview() {
     this._previewSrc = null;
+    if (this._previewHideRaf) {
+      cancelAnimationFrame(this._previewHideRaf);
+      this._previewHideRaf = null;
+    }
     if (!this.previewPanel) return;
     this.previewPanel.style.display = "none";
+  },
+
+  // Check if the cursor is still over a card-img element and update/hide preview accordingly.
+  // Called after a rAF delay so the browser has finished laying out any new DOM from LiveView patches.
+  _recheckPreview() {
+    const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
+    const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
+    if (cardImgUnder && cardImgUnder.dataset.cardImg) {
+      const newSrc = cardImgUnder.dataset.cardImg;
+      if (newSrc !== this._previewSrc) {
+        this.showPreview(newSrc, cardImgUnder.getBoundingClientRect());
+      }
+      // else: same src, preview already showing — do nothing
+    } else {
+      this.hidePreview();
+    }
   },
 
   // ─── Lasso Selection ──────────────────────────────────────────────────────

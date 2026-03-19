@@ -5,6 +5,7 @@ const CardPreview = {
     this._previewSrc = null;
     this._lastMouseX = 0;
     this._lastMouseY = 0;
+    this._hideRaf = null;
 
     this.onMove = (e) => {
       this._lastMouseX = e.clientX;
@@ -16,6 +17,12 @@ const CardPreview = {
       if (!el) return;
       const src = el.dataset.cardImg;
       if (!src || !this.panel || !this.img) return;
+
+      // Cancel any pending hide — we're on a card
+      if (this._hideRaf) {
+        cancelAnimationFrame(this._hideRaf);
+        this._hideRaf = null;
+      }
 
       this._previewSrc = src;
       this.img.src = src;
@@ -34,20 +41,13 @@ const CardPreview = {
 
     this.onOut = (e) => {
       if (!e.target.closest("[data-card-img]")) return;
-      // Check what's actually under the cursor — DOM patches can trigger
-      // mouseout even though the mouse hasn't moved
-      const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
-      const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
-      if (cardImgUnder && cardImgUnder.dataset.cardImg) {
-        // Still over a card — keep preview, update if src changed
-        if (cardImgUnder.dataset.cardImg !== this._previewSrc) {
-          this._previewSrc = cardImgUnder.dataset.cardImg;
-          this.img.src = this._previewSrc;
-        }
-      } else {
-        this._previewSrc = null;
-        if (this.panel) this.panel.style.display = "none";
-      }
+      // Defer check — LiveView patches replace elements, triggering mouseout
+      // before new elements are laid out
+      if (this._hideRaf) cancelAnimationFrame(this._hideRaf);
+      this._hideRaf = requestAnimationFrame(() => {
+        this._hideRaf = null;
+        this._recheckPreview();
+      });
     };
 
     this.el.addEventListener("mouseover", this.onOver);
@@ -55,21 +55,29 @@ const CardPreview = {
     document.addEventListener("mousemove", this.onMove);
   },
 
-  updated() {
-    // After a LiveView patch, re-check if cursor is still over a card
-    if (this._previewSrc && this.panel) {
-      const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
-      const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
-      if (cardImgUnder && cardImgUnder.dataset.cardImg) {
-        const newSrc = cardImgUnder.dataset.cardImg;
-        if (newSrc !== this._previewSrc) {
-          this._previewSrc = newSrc;
-          this.img.src = newSrc;
-        }
-      } else {
-        this._previewSrc = null;
-        this.panel.style.display = "none";
+  _recheckPreview() {
+    const elUnder = document.elementFromPoint(this._lastMouseX, this._lastMouseY);
+    const cardImgUnder = elUnder && elUnder.closest("[data-card-img]");
+    if (cardImgUnder && cardImgUnder.dataset.cardImg) {
+      const newSrc = cardImgUnder.dataset.cardImg;
+      if (newSrc !== this._previewSrc) {
+        this._previewSrc = newSrc;
+        if (this.img) this.img.src = newSrc;
       }
+    } else {
+      this._previewSrc = null;
+      if (this.panel) this.panel.style.display = "none";
+    }
+  },
+
+  updated() {
+    // After a LiveView patch, re-check preview after browser layout
+    if (this._previewSrc) {
+      if (this._hideRaf) cancelAnimationFrame(this._hideRaf);
+      this._hideRaf = requestAnimationFrame(() => {
+        this._hideRaf = null;
+        this._recheckPreview();
+      });
     }
   },
 
@@ -77,6 +85,7 @@ const CardPreview = {
     this.el.removeEventListener("mouseover", this.onOver);
     this.el.removeEventListener("mouseout", this.onOut);
     document.removeEventListener("mousemove", this.onMove);
+    if (this._hideRaf) cancelAnimationFrame(this._hideRaf);
     this._previewSrc = null;
     if (this.panel) this.panel.style.display = "none";
   }
