@@ -83,7 +83,6 @@ const DragDrop = {
         this.pushEvent("clear_selection", {});
       }
 
-      this.previewSrc = null;
       this.hidePreview();
       this.startDrag(card, e);
     };
@@ -103,15 +102,11 @@ const DragDrop = {
           owner: card.dataset.owner
         };
       }
-      if (card) this._lastHoveredInstanceId = card.dataset.instanceId;
       const imgEl = e.target.closest("[data-card-img]");
       if (!imgEl) return;
       if (imgEl.closest("[data-no-preview]")) return;
       const src = imgEl.dataset.cardImg;
-      if (src) {
-        this.previewSrc = src;
-        this.showPreview(src, imgEl.getBoundingClientRect());
-      }
+      if (src) this.showPreview(src, imgEl.getBoundingClientRect());
     };
 
     const onMouseout = (e) => {
@@ -120,19 +115,13 @@ const DragDrop = {
         const leavingCard = !card.contains(e.relatedTarget);
         const enteringNoHotkey = e.relatedTarget && e.relatedTarget.closest("[data-no-hotkey]");
         if (leavingCard || enteringNoHotkey) {
-          // When LiveView patches the DOM, it removes the old element and inserts a new one.
-          // This triggers mouseout with relatedTarget being null or outside the card.
-          // Defer the hide so updated() has a chance to find the replacement element first.
           this.hoveredCard = null;
-          this._pendingHide = requestAnimationFrame(() => {
-            this._pendingHide = null;
-            // If updated() already restored the hover, don't hide
-            if (this.hoveredCard) return;
-            this._lastHoveredInstanceId = null;
-            this.previewSrc = null;
-            this.hidePreview();
-          });
         }
+      }
+      const imgEl = e.target.closest("[data-card-img]");
+      if (!imgEl) return;
+      if (!imgEl.contains(e.relatedTarget)) {
+        this.hidePreview();
       }
     };
 
@@ -201,31 +190,6 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
-    // After a LiveView patch (e.g. opponent action), restore the preview if
-    // we were hovering a card. The DOM element may have been replaced, but
-    // the card is still under the cursor.
-    if (this.previewSrc && this.previewPanel) {
-      // Find the card element under the last known hover by instance id
-      const id = this._lastHoveredInstanceId;
-      const el = id && this.el.querySelector(`[data-instance-id="${id}"][data-card-img]`);
-      if (el) {
-        // Cancel the deferred hide — the card still exists
-        if (this._pendingHide) {
-          cancelAnimationFrame(this._pendingHide);
-          this._pendingHide = null;
-        }
-        // Restore hoveredCard so the deferred hide (if any) is a no-op
-        this.hoveredCard = {
-          instanceId: el.dataset.instanceId,
-          zone: el.dataset.zone,
-          owner: el.dataset.owner
-        };
-        // Update src in case the card image changed (e.g. flip)
-        const newSrc = el.dataset.cardImg || this.previewSrc;
-        this.previewSrc = newSrc;
-        this.previewImg.src = newSrc;
-      }
-    }
   },
 
   destroyed() {
