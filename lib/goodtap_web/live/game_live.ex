@@ -978,20 +978,21 @@ defmodule GoodtapWeb.GameLive do
     {:noreply,
      assign(socket,
        context_menu: nil,
-       scry_session: %{cards: top_cards, count: count, decisions: %{}}
+       scry_session: %{cards: top_cards, count: count, decisions: %{}, decision_order: []}
      )}
   end
 
   def handle_event("scry_decision", %{"instance_id" => id, "dest" => dest}, socket) do
     scry = socket.assigns.scry_session
     new_decisions = Map.put(scry.decisions, id, dest)
-    scry = %{scry | decisions: new_decisions}
+    new_order = scry.decision_order ++ [id]
+    scry = %{scry | decisions: new_decisions, decision_order: new_order}
 
     if map_size(new_decisions) == length(scry.cards) do
-      # All decided, resolve
+      # All decided, resolve — decision_order preserves click sequence
       state = socket.assigns.game_state
       player = socket.assigns.my_role
-      new_state = Actions.scry_resolve(state, player, new_decisions, scry.cards)
+      new_state = Actions.scry_resolve(state, player, new_decisions, scry.cards, new_order)
 
       counts = Enum.frequencies(Map.values(new_decisions))
       top = Map.get(counts, "top", 0)
@@ -1024,9 +1025,10 @@ defmodule GoodtapWeb.GameLive do
     player = socket.assigns.my_role
 
     if scry do
-      # Return all cards to deck top (in order)
-      decisions = Map.new(scry.cards, &{&1["instance_id"], "top"})
-      new_state = Actions.scry_resolve(state, player, decisions, scry.cards)
+      # Return all cards to deck top (in original order)
+      ids = Enum.map(scry.cards, & &1["instance_id"])
+      decisions = Map.new(ids, &{&1, "top"})
+      new_state = Actions.scry_resolve(state, player, decisions, scry.cards, ids)
       socket = persist_and_broadcast(socket, new_state)
       {:noreply, assign(socket, scry_session: nil)}
     else
@@ -1484,6 +1486,10 @@ defmodule GoodtapWeb.GameLive do
 
   defp card_display_url(card, viewer_role, owner_role, zone) do
     State.card_display_url(card, viewer_role, owner_role, zone)
+  end
+
+  defp preview_attrs(url) do
+    if url != State.card_back_url(), do: [{"data-card-img", url}], else: []
   end
 
   def render(assigns) do

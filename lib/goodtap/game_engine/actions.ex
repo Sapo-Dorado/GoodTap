@@ -373,23 +373,28 @@ defmodule Goodtap.GameEngine.Actions do
     deck = get_in(state, [player, "zones", "deck"])
     top_cards = Enum.take(deck, count)
     top_cards = if count > 1, do: Enum.map(top_cards, &clear_known_to_both(&1, state)), else: top_cards
+    top_cards = Enum.map(top_cards, &mark_known_to(&1, player))
     remaining = Enum.drop(deck, count)
     state = put_in(state, [player, "zones", "deck"], remaining)
     {top_cards, state}
   end
 
-  # Resolve scry - place cards based on decisions map %{instance_id => destination}
-  def scry_resolve(state, player, decisions, scry_cards) do
-    to_top = []
-    to_bottom = []
+  # Resolve scry - place cards based on decisions map %{instance_id => destination}.
+  # decision_order is the list of instance_ids in the order they were clicked.
+  # Cards sent to top are ordered so that the first-clicked is deepest and
+  # the last-clicked is on top of the deck. Bottom cards use the same order.
+  def scry_resolve(state, player, decisions, scry_cards, decision_order) do
+    card_by_id = Map.new(scry_cards, &{&1["instance_id"], &1})
 
+    # Process in click order so position reflects user intent
     {state, to_top, to_bottom} =
-      Enum.reduce(scry_cards, {state, to_top, to_bottom}, fn card, {st, tops, bottoms} ->
-        dest = Map.get(decisions, card["instance_id"], "bottom")
+      Enum.reduce(decision_order, {state, [], []}, fn id, {st, tops, bottoms} ->
+        card = card_by_id[id]
+        dest = Map.get(decisions, id, "bottom")
 
         case dest do
           "top" ->
-            {st, [mark_known_to(card, player) | tops], bottoms}
+            {st, tops ++ [mark_known_to(card, player)], bottoms}
 
           "bottom" ->
             {st, tops, bottoms ++ [mark_known_to(card, player)]}
@@ -408,6 +413,7 @@ defmodule Goodtap.GameEngine.Actions do
       end)
 
     deck = get_in(state, [player, "zones", "deck"])
+    # First-clicked top card is deepest (leftmost), last-clicked is on top
     new_deck = Enum.reverse(to_top) ++ deck ++ to_bottom
     state = put_in(state, [player, "zones", "deck"], new_deck)
     maybe_reveal_deck_top(state, player)
