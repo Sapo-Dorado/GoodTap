@@ -102,6 +102,14 @@ defmodule Goodtap.GameEngine.ActionsTest do
       refute State.known_to?(moved, "p2")
     end
 
+    test "face-down card resets to face-up when moved to hand" do
+      c = card(%{"instance_id" => "c1", "is_face_down" => true})
+      state = game_state() |> with_cards_in("p1", "battlefield", [c])
+      {:ok, new_state} = Actions.move_to_hand(state, "p1", "c1", "battlefield")
+      [moved] = cards_in(new_state, "p1", "hand")
+      assert moved["is_face_down"] == false
+    end
+
     test "token sent to hand disappears" do
       t = token(%{"instance_id" => "t1"})
       state = game_state() |> with_cards_in("p1", "battlefield", [t])
@@ -586,7 +594,7 @@ defmodule Goodtap.GameEngine.ActionsTest do
       refute Map.has_key?(moved, "on_battlefield")
     end
 
-    test "card becomes known to all players" do
+    test "face-up card becomes known to all players" do
       c = card(%{"instance_id" => "c1"})
       state = game_state() |> with_cards_in("p1", "hand", [c])
 
@@ -594,6 +602,40 @@ defmodule Goodtap.GameEngine.ActionsTest do
       [placed] = cards_in(new_state, "p1", "battlefield")
       assert State.known_to?(placed, "p1")
       assert State.known_to?(placed, "p2")
+    end
+
+    test "face-down card does not change known state" do
+      c = card(%{"instance_id" => "c1", "is_face_down" => true, "known" => %{"p1" => true, "p2" => false}})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+
+      {:ok, new_state} = Actions.move_to_player_battlefield(state, "p1", "p2", "c1", "hand", 0.3, 0.2)
+      [placed] = cards_in(new_state, "p1", "battlefield")
+      assert State.known_to?(placed, "p1")
+      refute State.known_to?(placed, "p2")
+    end
+
+    test "flip in hand then play face-down preserves unknown state for opponent" do
+      # Simulates: draw a card (known to p1 only), flip face-down in hand, play to battlefield
+      c = card(%{"instance_id" => "c1", "known" => %{"p1" => true, "p2" => false}})
+      state = game_state() |> with_cards_in("p1", "hand", [c])
+
+      # Step 1: flip face-down in hand
+      {:ok, flipped_state} = Actions.flip_card(state, "p1", "c1", "hand")
+      [flipped] = cards_in(flipped_state, "p1", "hand")
+      assert flipped["is_face_down"] == true
+      refute State.known_to?(flipped, "p2"), "flipping in hand must not reveal to opponent"
+
+      # Step 2: play to battlefield via move_to_player_battlefield (drag-drop path)
+      {:ok, bf_state} = Actions.move_to_player_battlefield(flipped_state, "p1", "p1", "c1", "hand", 0.5, 0.5)
+      [on_bf] = cards_in(bf_state, "p1", "battlefield")
+      assert on_bf["is_face_down"] == true
+      refute State.known_to?(on_bf, "p2"), "face-down card on battlefield must not be known to opponent"
+
+      # Step 3: return to hand — card resets to face-up
+      {:ok, hand_state} = Actions.move_to_hand(bf_state, "p1", "c1", "battlefield")
+      [in_hand] = cards_in(hand_state, "p1", "hand")
+      refute State.known_to?(in_hand, "p2"), "returning face-down card to hand must not reveal to opponent"
+      assert in_hand["is_face_down"] == false, "card should reset to face-up when returned to hand"
     end
   end
 

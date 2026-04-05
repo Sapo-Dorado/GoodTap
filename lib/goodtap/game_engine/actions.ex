@@ -108,7 +108,7 @@ defmodule Goodtap.GameEngine.Actions do
 
   def move_to_hand(state, player, instance_id, source_zone, insert_index \\ nil) do
     with {:ok, {card, state}} <- remove_from_zone(state, player, source_zone, instance_id) do
-      card = card |> Map.put("tapped", false) |> reset_counters() |> mark_known_to(player)
+      card = card |> reset_face() |> Map.put("tapped", false) |> reset_counters() |> mark_known_to(player)
 
       if card["is_token"] do
         {:ok, maybe_reveal_deck_top(state, player)}
@@ -194,7 +194,7 @@ defmodule Goodtap.GameEngine.Actions do
         |> Map.put("x", x)
         |> Map.put("y", y)
         |> Map.put("z", z)
-        |> mark_known_to_both(state)
+        |> then(fn c -> if c["is_face_down"], do: c, else: mark_known_to_both(c, state) end)
         |> then(fn c ->
           if target_player == source_player,
             do: Map.delete(c, "on_battlefield"),
