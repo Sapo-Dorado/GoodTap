@@ -238,6 +238,7 @@ defmodule GoodtapWeb.GameLive do
     valid_actions =
       cond do
         is_find_mode and is_my_card -> [:move_to_graveyard, :move_to_exile, :move_to_hand, :move_to_deck_top, :move_to_deck_bottom, :move_to_battlefield]
+        zone_popup_open and zone == "deck" and is_my_card -> Hotkeys.valid_actions_for("deck") ++ [:move_to_deck_top, :move_to_deck_bottom, :move_to_hand, :move_to_graveyard, :move_to_exile, :move_to_battlefield]
         is_my_card -> Hotkeys.valid_actions_for(zone)
         true -> []
       end

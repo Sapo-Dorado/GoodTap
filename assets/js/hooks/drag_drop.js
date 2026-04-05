@@ -139,17 +139,23 @@ const DragDrop = {
     const MOVE_KEYS = new Set((this.el.dataset.moveKeys || "").split(",").filter(Boolean));
 
     const onKeydown = (e) => {
-      // Don't fire hotkeys when typing in inputs
+      // Don't fire hotkeys when typing in inputs — unless it's a move key
+      // while hovering a card (e.g. find-card search in deck popup)
       const tag = document.activeElement && document.activeElement.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const key = e.key === " " ? "space" : e.key;
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        if (this.hoveredCard && MOVE_KEYS.has(key)) {
+          e.preventDefault();
+        } else {
+          return;
+        }
+      }
 
       if (e.key === "Escape") {
         this.pushEvent("close_context_menu", {});
         return;
       }
 
-      // Preserve case so shift+l arrives as "L", shift+u as "U", etc.
-      const key = e.key === " " ? "space" : e.key;
       const hovered = this.hoveredCard;
 
       // Optimistically hide the card before the server round-trip
