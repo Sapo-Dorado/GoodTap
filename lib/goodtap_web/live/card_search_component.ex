@@ -156,6 +156,7 @@ defmodule GoodtapWeb.CardSearchComponent do
           placeholder="Search cards..."
           class="input input-bordered w-full bg-gray-700"
           autofocus
+          onkeydown="if(event.key==='Enter')event.preventDefault()"
         />
       </form>
 
