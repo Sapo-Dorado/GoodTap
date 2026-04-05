@@ -1637,7 +1637,7 @@ defmodule GoodtapWeb.GameLive do
                 data-instance-id={card["instance_id"]}
                 data-zone="battlefield"
                 data-owner={@my_role}
-                data-card-img={card_display_url(card, @my_role, @my_role, "battlefield")}
+                {preview_attrs(card_display_url(card, @my_role, @my_role, "battlefield"))}
                 data-selected={if MapSet.member?(@selected_cards, card["instance_id"]), do: "true", else: "false"}
                 data-is-token={if card["is_token"], do: "true", else: "false"}
               >
@@ -1701,7 +1701,7 @@ defmodule GoodtapWeb.GameLive do
                 <div class="opp-card-inner">
                   <div
                     style="transform: rotate(180deg); transform-origin: center;"
-                    data-card-img={card_display_url(card, @my_role, owner_key, "battlefield")}
+                    {preview_attrs(card_display_url(card, @my_role, owner_key, "battlefield"))}
                   >
                     <div class="flex flex-col items-center">
                       <img
@@ -1940,7 +1940,7 @@ defmodule GoodtapWeb.GameLive do
                 data-instance-id={hd(zone_cards(@my, "deck"))["instance_id"]}
                 data-zone="deck"
                 data-owner={@my_role}
-                data-card-img={card_display_url(hd(zone_cards(@my, "deck")), @my_role, @my_role, "deck")}
+                {preview_attrs(card_display_url(hd(zone_cards(@my, "deck")), @my_role, @my_role, "deck"))}
               ></div>
               <div class="absolute bottom-0 right-0 bg-black/70 text-white text-xs px-1 rounded-tl leading-4 pointer-events-none" style="z-index: 1;">
                 {length(zone_cards(@my, "deck"))}
@@ -2187,7 +2187,6 @@ defmodule GoodtapWeb.GameLive do
             class="flex overflow-x-auto"
             style="height: 148px;"
             data-drop-zone={zone_name}
-            {if zone_name == "deck" and not is_find, do: [{"data-no-preview", ""}], else: []}
           >
             <div class="flex items-center gap-2 px-4 py-2 min-w-max mx-auto">
               <%
@@ -2203,6 +2202,7 @@ defmodule GoodtapWeb.GameLive do
               %>
               <%= for card <- cards do %>
                 <% display_card = if is_find, do: put_in(card, ["known", @my_role], true), else: card %>
+                <% img_url = card_display_url(display_card, @my_role, zone_owner, zone_name) %>
                 <div
                   id={"zone-card-#{card["instance_id"]}"}
                   class="shrink-0 cursor-pointer hover:scale-105 transition-transform"
@@ -2210,7 +2210,7 @@ defmodule GoodtapWeb.GameLive do
                   data-instance-id={card["instance_id"]}
                   data-zone={zone_name}
                   data-owner={zone_owner}
-                  data-card-img={card_display_url(display_card, @my_role, zone_owner, zone_name)}
+                  {preview_attrs(img_url)}
                 >
                   <img
                     src={card_display_url(display_card, @my_role, zone_owner, zone_name)}
@@ -2281,7 +2281,7 @@ defmodule GoodtapWeb.GameLive do
             <%= for card <- @scry_session.cards do %>
               <div class="shrink-0 text-center">
                 <img
-                  src={card_display_url(Map.put(card, "known", true), @my_role, @my_role, "deck")}
+                  src={card_display_url(card, @my_role, @my_role, "deck")}
                   class="h-40 w-auto rounded shadow mx-auto mb-2"
                 />
                 <div class="text-xs text-gray-300 mb-2 max-w-24 truncate">{card["name"]}</div>
