@@ -207,6 +207,32 @@ const DragDrop = {
 
   updated() {
     syncZCounter();
+    // Re-hide cards that are mid-drag — morphdom may have reset their styles
+    if (this.dragging) {
+      const id = this.dragging.instanceId;
+      const el =
+        document.getElementById(`card-${id}`) ||
+        document.getElementById(`hand-card-${id}`) ||
+        document.querySelector(`[data-instance-id="${id}"]`);
+      if (el) {
+        el.style.opacity = "0";
+        el.style.pointerEvents = "none";
+        this.draggedEl = el; // morphdom may have replaced the element
+      }
+      for (const eg of (this.extraGhosts || [])) {
+        const eid = eg.el.dataset?.instanceId;
+        if (!eid) continue;
+        const eel =
+          document.getElementById(`card-${eid}`) ||
+          document.getElementById(`hand-card-${eid}`) ||
+          document.querySelector(`[data-instance-id="${eid}"]`);
+        if (eel) {
+          eel.style.opacity = "0";
+          eel.style.pointerEvents = "none";
+          eg.el = eel; // morphdom may have replaced the element
+        }
+      }
+    }
   },
 
   destroyed() {
